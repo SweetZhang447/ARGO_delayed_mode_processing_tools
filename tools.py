@@ -30,6 +30,7 @@ def to_julian_day(date_obj):
 
 def read_nc_file(filepath):
 
+    # init temp arrs
     PROFILE_NUMS = []
 
     PRESs = []
@@ -155,11 +156,96 @@ def read_nc_file(filepath):
 
     QC_FLAG_CHECK = np.squeeze(np.array(QC_FLAG_CHECK))
 
-    return (PRESs, TEMPs, PSALs, COUNTs, 
-            JULDs, JULD_LOCATIONs, LATs, LONs, JULD_QC, POSITION_QC, 
-            PSAL_ADJUSTED, PSAL_ADJUSTED_ERROR, PSAL_ADJUSTED_QC, 
-            TEMP_ADJUSTED, TEMP_ADJUSTED_ERROR, TEMP_ADJUSTED_QC, 
-            PRES_ADJUSTED, PRES_ADJUSTED_ERROR, PRES_ADJUSTED_QC,
-            PSAL_QC, TEMP_QC, PRES_QC, CNDC_QC,
-            PROFILE_NUMS, CNDC_ADJUSTED_QC, QC_FLAG_CHECK)
+    argo_data = {
+        "PRESs": PRESs,
+        "TEMPs": TEMPs,
+        "PSALs": PSALs,
+        "COUNTs": COUNTs,
+        "JULDs": JULDs,
+        "JULD_LOCATIONs": JULD_LOCATIONs,
+        "LATs": LATs,
+        "LONs": LONs,
+        "JULD_QC": JULD_QC,
+        "POSITION_QC": POSITION_QC,
+        "PSAL_ADJUSTED": PSAL_ADJUSTED,
+        "PSAL_ADJUSTED_ERROR": PSAL_ADJUSTED_ERROR,
+        "PSAL_ADJUSTED_QC": PSAL_ADJUSTED_QC,
+        "TEMP_ADJUSTED": TEMP_ADJUSTED,
+        "TEMP_ADJUSTED_ERROR": TEMP_ADJUSTED_ERROR,
+        "TEMP_ADJUSTED_QC": TEMP_ADJUSTED_QC,
+        "PRES_ADJUSTED": PRES_ADJUSTED,
+        "PRES_ADJUSTED_ERROR": PRES_ADJUSTED_ERROR,
+        "PRES_ADJUSTED_QC": PRES_ADJUSTED_QC,
+        "PSAL_QC": PSAL_QC,
+        "TEMP_QC": TEMP_QC,
+        "PRES_QC": PRES_QC,
+        "CNDC_QC": CNDC_QC,
+        "PROFILE_NUMS": PROFILE_NUMS,
+        "CNDC_ADJUSTED_QC": CNDC_ADJUSTED_QC,
+        "QC_FLAG_CHECK": QC_FLAG_CHECK,
+    }
 
+    return argo_data
+
+    """
+    simplify code later...
+    def read_nc_file(filepath):
+    import itertools
+    import numpy as np
+    import glob
+    import os
+    import netCDF4 as nc4
+
+    # Define the keys for argo data
+    argo_keys = [
+        "PRESs", "TEMPs", "PSALs", "COUNTs",
+        "JULDs", "JULD_LOCATIONs", "LATs", "LONs",
+        "JULD_QC", "POSITION_QC",
+        "PSAL_ADJUSTED", "PSAL_ADJUSTED_ERROR", "PSAL_ADJUSTED_QC",
+        "TEMP_ADJUSTED", "TEMP_ADJUSTED_ERROR", "TEMP_ADJUSTED_QC",
+        "PRES_ADJUSTED", "PRES_ADJUSTED_ERROR", "PRES_ADJUSTED_QC",
+        "PSAL_QC", "TEMP_QC", "PRES_QC", "CNDC_QC",
+        "PROFILE_NUMS", "CNDC_ADJUSTED_QC", "QC_FLAG_CHECK",
+    ]
+
+    # Initialize argo_data dictionary with empty lists
+    argo_data = {key: [] for key in argo_keys}
+
+    # Get all NetCDF files in the specified filepath
+    files = sorted(glob.glob(os.path.join(filepath, "*.nc")))
+
+    for f in files:
+        # Open NETCDF file and grab data
+        float_dataset = nc4.Dataset(f)
+
+        # Check if key variables have valid data
+        PRES_temp = np.squeeze(float_dataset.variables['PRES'][:].filled(np.nan))
+        PSAL_temp = np.squeeze(float_dataset.variables['PSAL'][:].filled(np.nan))
+        TEMP_temp = np.squeeze(float_dataset.variables['TEMP'][:].filled(np.nan))
+
+        if any(arr.size <= 1 for arr in (PRES_temp, PSAL_temp, TEMP_temp)):
+            print(f"Skipping file: {os.path.basename(f)} due to missing data")
+            continue
+
+        # Add data to the dictionary
+        for key in argo_keys:
+            if key in float_dataset.variables:
+                argo_data[key].append(float_dataset.variables[key][:].filled(np.nan))
+            elif key == "PROFILE_NUMS":
+                argo_data[key].append(int(float_dataset.variables['PROFILE_NUM'][:].filled(np.nan)[0]))
+
+    # Post-process: Combine arrays and handle missing values
+    for key in argo_keys:
+        if key in ["PRESs", "TEMPs", "PSALs", "COUNTs", "PSAL_ADJUSTED", "TEMP_ADJUSTED", "PRES_ADJUSTED",
+                   "PSAL_ADJUSTED_ERROR", "TEMP_ADJUSTED_ERROR", "PRES_ADJUSTED_ERROR",
+                   "PSAL_ADJUSTED_QC", "TEMP_ADJUSTED_QC", "PRES_ADJUSTED_QC",
+                   "PSAL_QC", "TEMP_QC", "PRES_QC", "CNDC_QC", "CNDC_ADJUSTED_QC"]:
+            argo_data[key] = np.squeeze(
+                np.array(list(itertools.zip_longest(*argo_data[key], fillvalue=np.nan))).T
+            )
+        else:
+            argo_data[key] = np.squeeze(np.array(argo_data[key]))
+
+    return argo_data
+
+    """

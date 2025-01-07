@@ -265,6 +265,8 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
     colors = ['green' for _ in range(len(PRES))]
     for i in np.where(bad_mask == True)[0]:
         colors[i] = 'red'
+    # copy org color arr
+    org_colors = copy.deepcopy(colors)
   
     # Plot points
     if data_type == 'PRES':
@@ -287,7 +289,7 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
     # Click event
     def on_click(event):
         # Tells function to use a nonlocal selected points 
-        nonlocal selected_points
+        nonlocal selected_points, org_colors
         for scatter, subset_colors in [(scatter_plt, colors)]:
             cont, ind = scatter.contains(event)
             if cont:
@@ -305,7 +307,8 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
                             # If it is, remove the entire range of color and remove the pair
                             selected_points.pop(i)
                             for val_in_range in np.arange(p1, p2 + 1):
-                                subset_colors[val_in_range] = 'green'
+                                # set color back to orginal color 
+                                subset_colors[val_in_range] = org_colors[val_in_range]
                             # Set color and update 
                             scatter.set_color(subset_colors)
                             fig.canvas.draw_idle()
@@ -393,8 +396,12 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
     temp_copy = copy.deepcopy(temp)
     
     # Convert data
-    sal_copy = gsw.conversions.SA_from_SP(sal, temp, lons, lats)
-    temp_copy = gsw.conversions.CT_from_t(sal, temp, pres)
+    if (not np.isnan(lats)) and (not np.isnan(lons)):
+        sal_copy = gsw.conversions.SA_from_SP(sal, temp, lons, lats)
+        temp_copy = gsw.conversions.CT_from_t(sal, temp, pres)
+    else:
+        sal_copy = sal
+        temp_copy = temp
 
     # Define salinity and temperature bounds for the contour plot
     smin = np.nanmin(sal_copy) - 1
