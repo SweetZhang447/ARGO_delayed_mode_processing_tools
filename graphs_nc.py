@@ -133,7 +133,7 @@ def pres_v_var(df_PRESs, df_VARs, df_JULD, compare_var, float_name):
     plt.title(f"Argo Float {float_name} PRES-{compare_var} Graph")
     plt.show()
 
-def verify_qc_flags_graphs(var, PRES, data_type, qc_arr, profile_num, date):
+def verify_qc_flags_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=None):
 
     # Separate points based on QC flags
     bad_mask = (qc_arr == 4) | (qc_arr == 3) 
@@ -144,9 +144,13 @@ def verify_qc_flags_graphs(var, PRES, data_type, qc_arr, profile_num, date):
     # Array to store selected points
     selected_points_bad = []  
     selected_points_good = [] 
+    print_multiplot = False
 
-    # Create the figure and axes
-    fig, ax = plt.subplots()
+    if ax is None:
+        # Create the figure and axes
+        fig, ax = plt.subplots()
+    else:
+        print_multiplot = True
 
     # init color arrs
     colors_good = ['green' for _ in range(len(PRES[good_mask]))]
@@ -163,8 +167,8 @@ def verify_qc_flags_graphs(var, PRES, data_type, qc_arr, profile_num, date):
         scatter_bad = ax.scatter(var[bad_mask], PRES[bad_mask], color=colors_bad, s=30, alpha=0.9)
 
     # Invert y-axis and add grid
-    plt.gca().invert_yaxis()
-    plt.grid(visible=True)
+    ax.invert_yaxis()
+    ax.grid(visible=True)
 
     # Hover functionality
     cursor = mplcursors.cursor([scatter_good, scatter_bad], hover=True)
@@ -215,21 +219,25 @@ def verify_qc_flags_graphs(var, PRES, data_type, qc_arr, profile_num, date):
                         scatter.set_color(subset_colors)
                         fig.canvas.draw_idle()
                         print(f"Point removed: Index={clicked_idx}, {data_type}={var_val:.2f}, Profile_num={profile_num}, Array Value")
-
-    fig.canvas.mpl_connect('button_press_event', on_click)
+    
+    if print_multiplot == False:
+        fig.canvas.mpl_connect('button_press_event', on_click)
 
     if data_type == "PRES":
         # Add labels and title
         ax.set_xlabel("Index")
         ax.set_ylabel('Pressure')
-        ax.set_title(f"Pressure Graph for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
+        if print_multiplot == False:
+            ax.set_title(f"Pressure Graph for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
     else:
         # Add labels and title
-        plt.xlabel(data_type)
-        plt.ylabel('Pressure')
-        plt.title(f"PRES v {data_type} for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
+        ax.set_xlabel(data_type)
+        ax.set_ylabel('Pressure')
+        if print_multiplot == False:
+            ax.set_title(f"PRES v {data_type} for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
     
-    plt.show()
+    if print_multiplot == False:
+        plt.show()
 
     return selected_points_bad, selected_points_good
     
@@ -390,8 +398,10 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
 
     return selected_points
 
-def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adjusted_qc, psal_adjusted_qc):
- 
+def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adjusted_qc, psal_adjusted_qc, ax = None):
+    
+    print_multiplot = False
+
     sal_copy = copy.deepcopy(sal)
     temp_copy = copy.deepcopy(temp)
     
@@ -445,9 +455,13 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
             selected_points.append(1)
 
     # Plot data
-    fig, ax = plt.subplots(figsize=(10, 6))
-    CS = plt.contour(si, ti, dens, linestyles='dashed', colors='k')
-    plt.clabel(CS, fontsize=12, inline=1, fmt='%.2f')
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 6))
+    else:
+        print_multiplot = True
+
+    CS = ax.contour(si, ti, dens, linestyles='dashed', colors='k')
+    ax.clabel(CS, fontsize=12, inline=1, fmt='%.2f')
     # Plot TS line
     ts_line = ax.plot(sal_copy, temp_copy, color='dimgrey', linewidth=2, zorder=1)
     # Plot the salinity-temperature relationship as a scatter plot
@@ -488,11 +502,12 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
                 scatter.set_color(graph_colors)
                 fig.canvas.draw_idle()
 
-    fig.canvas.mpl_connect('button_press_event', on_click)
+    if print_multiplot == False:
+        fig.canvas.mpl_connect('button_press_event', on_click)
 
     # Set x and y limits, labels, and title
-    plt.xlim([smin + 0.75, smax - 0.75])
-    plt.ylim([tmin + 0.75, tmax - 0.75])
+    ax.set_xlim([smin + 0.75, smax - 0.75])
+    ax.set_ylim([tmin + 0.75, tmax - 0.75])
 
     # Custom legend elements
     custom_legend = [
@@ -508,12 +523,13 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
         loc='upper left', title="Data Quality"
     )
 
-    plt.xlabel('Salinity (PSU)')
-    plt.ylabel('Temperature (degC)')
-    plt.title(f"TS Graph for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
-
-    plt.tight_layout()
-    plt.show()
+    ax.set_xlabel('Salinity (PSU)')
+    ax.set_ylabel('Temperature (degC)')
+ 
+    if print_multiplot == False:
+        ax.set_title(f"TS Graph for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
+        plt.tight_layout()
+        plt.show()
 
     return selected_points
 

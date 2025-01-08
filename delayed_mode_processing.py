@@ -1,6 +1,7 @@
 import csv
 import glob
 import os 
+from matplotlib import pyplot as plt
 import numpy as np
 from datetime import datetime, timedelta
 import itertools
@@ -396,11 +397,53 @@ def flag_TS_data(argo_data, profile_num):
        
     return argo_data
 
+def multi_plot_info(argo_data, profile_num):
+
+    i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
+    sal_arr = argo_data["PSAL_ADJUSTED"][i]
+    temp_arr = argo_data["TEMP_ADJUSTED"][i]
+    pres_arr = argo_data["PRES_ADJUSTED"][i]
+    temp_qc = argo_data["TEMP_ADJUSTED_QC"][i]
+    psal_qc = argo_data["PSAL_ADJUSTED_QC"][i]
+    lon = argo_data["LONs"][i]
+    lat = argo_data["LATs"][i]
+    juld = argo_data["JULDs"][i]
+
+    # Create a 2x2 grid of subplots
+    fig, axs = plt.subplots(2, 2, figsize=(10, 8))
+
+    # Populate the top-left subplot
+    verify_qc_flags_graphs(temp_arr, pres_arr, "TEMP", temp_qc, argo_data["PROFILE_NUMS"][i], juld, ax=axs[0, 0])
+
+    # Populate the top-right subplot
+    verify_qc_flags_graphs(sal_arr, pres_arr, "PSAL", psal_qc, argo_data["PROFILE_NUMS"][i], juld, ax=axs[0, 1])
+
+    # Populate the bottom-left subplot
+    flag_TS_data_graphs(sal_arr, temp_arr, juld, lon, lat, pres_arr, profile_num, temp_qc, psal_qc, ax=axs[1, 0])
+
+    # Fill bottom-right subplot with text
+    timestamp = from_julian_day(float(juld))
+    axs[1, 1].text(0.5, 0.7, f'Data Snapshot of Profile: {profile_num}', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.5, f'Datetime of Profile: {timestamp.date()} {timestamp.strftime('%H:%M:%S')}', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.3, f'Lat: {lat:.2f} Lon: {lon:.2f}', fontsize=12, ha='center', va='center')
+    axs[1, 1].axis('off')
+    #plt.title(f"Data Snapshot of {profile_num} on  {from_julian_day(float(juld)).date()}")
+    
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+
+    # Display the plots
+    plt.show()
+
 def manipulate_data():
     # Get dir of generated NETCDF files
     nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_0"
     argo_data = read_nc_file(nc_filepath)
     profile_num = 86
+
+    argo_data = multi_plot_info(argo_data, profile_num)
+    #argo_data = flag_data_points(argo_data, profile_num, "PSAL")
+    raise Exception
 
     # Get rid of range of data
     argo_data = flag_range_data(argo_data, profile_num, "PRES")
@@ -415,6 +458,7 @@ def manipulate_data():
     argo_data = flag_data_points(argo_data, profile_num, "PRES")
     argo_data = flag_data_points(argo_data, profile_num, "PSAL")
     argo_data = flag_data_points(argo_data, profile_num, "TEMP")
+    raise Exception
 
     # Write results back to NETCDF file
     float_num = "F10015"
@@ -456,8 +500,8 @@ def first_time_run():
 
 def main():
 
-    first_time_run()
-    #manipulate_data()
+    # first_time_run()
+    manipulate_data()
 
 if __name__ == '__main__':
  
