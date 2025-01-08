@@ -203,6 +203,20 @@ def set_adjusted_arrs(argo_data):
 
     return argo_data
 
+def process_qc_flags(qc_array, adjusted_qc_array, adjusted_data, label, profile_num, julds, pres_data):
+    if not (np.all(qc_array == 0) or np.all(qc_array == 1)):
+        if np.any(qc_array == 3) or np.any(qc_array == 4):
+            selected_indexes_qc, selected_indexes_arr_pts = verify_qc_flags_graphs(adjusted_data, pres_data, label, qc_array, profile_num, julds)
+            for j in selected_indexes_qc:
+                qc_array[j] = 1
+                adjusted_qc_array[j] = 1
+                print(f"Setting {label}_QC prof_num: {profile_num} index: {j} to GOOD VAL")
+            for j in selected_indexes_arr_pts:
+                adjusted_qc_array[j] = 4
+                print(f"Setting {label}_ADJUSTED_QC prof_num: {profile_num} index: {j} to BAD VAL")
+            return True, qc_array, adjusted_qc_array
+    return False, qc_array, adjusted_qc_array
+
 def verify_qc_flags(argo_data):
     
     for i in np.arange(len(argo_data["PROFILE_NUMS"])):
@@ -210,69 +224,26 @@ def verify_qc_flags(argo_data):
         temp_checked = False
         pres_checked = False
         trigger_ts = False
+
         # Check that QC_FLAG_CHECK has not been set yet
         if argo_data["QC_FLAG_CHECK"][i] == 0:
-            # Check PRES arr first - check that QC arr is not all 0s or 1s
-            if not (np.all(argo_data["PRES_QC"][i] == 0) or np.all(argo_data["PRES_QC"][i] == 1)):
-                # Check that there are QC flags present to test
-                if np.any(argo_data["PRES_QC"][i] == 3) or np.any(argo_data["PRES_QC"][i] == 4):
-                    # Plot the ones that need to be checked
-                    selected_indexes_qc, selected_indexes_arr_pts = verify_qc_flags_graphs(None, argo_data["PRES_ADJUSTED"][i], "PRES", argo_data["PRES_QC"][i], argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i])
-                    # Get rid of marked indexes in QC arrs
-                    for j in selected_indexes_qc:
-                        argo_data["PRES_QC"][i][j] = 1   
-                        argo_data["PRES_ADJUSTED_QC"][i][j] = 1
-                        print(f"Setting PRES_QC[{i}][{j}] to GOOD VAL")  
-                    # Mark bad points in arr
-                    for j in selected_indexes_arr_pts:
-                        argo_data["PRES_ADJUSTED_QC"][i][j] = 4
-                        print(f"Setting PRES_ADJUSTED_QC[{i}][{j}] to BAD VAL")
-                    pres_checked = True
-                    trigger_ts = True
-                else:
-                    pres_checked = True
-            else:
-                pres_checked = True
-          
-            # Check temp
-            if not (np.all(argo_data["TEMP_QC"][i] == 0) or np.all(argo_data["TEMP_QC"][i] == 1)):
-                if np.any(argo_data["TEMP_QC"][i] == 3) or np.any(argo_data["TEMP_QC"][i] == 4):
-                    selected_indexes_qc, selected_indexes_arr_pts = verify_qc_flags_graphs(argo_data["TEMP_ADJUSTED"][i], argo_data["PRES_ADJUSTED"][i], "TEMP", argo_data["TEMP_QC"][i], argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i])
-                    for j in selected_indexes_qc:
-                        argo_data["TEMP_QC"][i][j] = 1   
-                        argo_data["TEMP_ADJUSTED_QC"][i][j] = 1  
-                        print(f"Setting TEMP_QC[{i}][{j}] to GOOD VAL") 
-                    for j in selected_indexes_arr_pts:
-                        argo_data["TEMP_ADJUSTED_QC"][i][j] = 4
-                        print(f"Setting TEMP_ADJUSTED_QC[{i}][{j}] to BAD VAL")
-                    temp_checked = True
-                    trigger_ts = True
-                else:
-                    temp_checked = True
-            else:
-                temp_checked = True
-            
-            # Check sal
-            if not (np.all(argo_data["PSAL_QC"][i] == 0) or np.all(argo_data["PSAL_QC"][i] == 1)):
-                if np.any(argo_data["PSAL_QC"][i] == 3) or np.any(argo_data["PSAL_QC"][i] == 4):
-                    selected_indexes_qc, selected_indexes_arr_pts = verify_qc_flags_graphs(argo_data["PSAL_ADJUSTED"][i], argo_data["PRES_ADJUSTED"][i], "PSAL", argo_data["PSAL_QC"][i], argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i])
-                    for j in selected_indexes_qc:
-                        argo_data["PSAL_QC"][i][j] = 1  
-                        argo_data["PSAL_ADJUSTED_QC"][i][j] = 1  
-                        print(f"Setting PSAL_QC[{i}][{j}] to GOOD VAL") 
-                    for j in selected_indexes_arr_pts:
-                        argo_data["PSAL_ADJUSTED_QC"][i][j] = 4
-                        print(f"Setting PSAL_ADJUSTED_QC[{i}][{j}] to BAD VAL")
-                    sal_checked = True
-                    trigger_ts = True
-                else:
-                    sal_checked = True
-            else:
-                sal_checked = True
+
+            # Condition to trigger data snapshot graph
+            if ((not (np.all(argo_data["TEMP_QC"][i] == 0) or np.all(argo_data["TEMP_QC"][i] == 1))) and 
+                (np.any(argo_data["TEMP_QC"][i] == 3) or np.any(argo_data["TEMP_QC"][i] == 4))) or \
+                ((not (np.all(argo_data["PSAL_QC"][i] == 0) or np.all(argo_data["PSAL_QC"][i] == 1))) and 
+                (np.any(argo_data["PSAL_QC"][i] == 3) or np.any(argo_data["PSAL_QC"][i] == 4))):
+                multi_plot_info(argo_data, argo_data["PROFILE_NUMS"][i])
+
+            pres_checked, argo_data["PRES_QC"][i], argo_data["PRES_ADJUSTED_QC"][i] = process_qc_flags(argo_data["PRES_QC"][i], argo_data["PRES_ADJUSTED_QC"][i], None, "PRES", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
+            temp_checked, argo_data["TEMP_QC"][i], argo_data["TEMP_ADJUSTED_QC"][i] = process_qc_flags(argo_data["TEMP_QC"][i], argo_data["TEMP_ADJUSTED_QC"][i], argo_data["TEMP_ADJUSTED"][i], "TEMP", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
+            sal_checked, argo_data["PSAL_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i] = process_qc_flags(argo_data["PSAL_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i], argo_data["PSAL_ADJUSTED"][i], "PSAL", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
+            # Trigger TS data graph if any flag required checking
+            if temp_checked or sal_checked:
+                trigger_ts = True
             
             if trigger_ts == True:
-        
-                selected_points = flag_TS_data_graphs(argo_data["PSAL_ADJUSTED"][i], argo_data["TEMP_ADJUSTED"][i], argo_data["JULDs"][i], argo_data["LONs"][i], argo_data["LATs"][i], argo_data["PRES_ADJUSTED"][i], argo_data["PROFILE_NUMS"][i], argo_data["TEMP_QC"][i], argo_data["PSAL_QC"][i])
+                selected_points = flag_TS_data_graphs(argo_data["PSAL_ADJUSTED"][i], argo_data["TEMP_ADJUSTED"][i], argo_data["JULDs"][i], argo_data["LONs"][i], argo_data["LATs"][i], argo_data["PRES_ADJUSTED"][i], argo_data["PROFILE_NUMS"][i], argo_data["TEMP_ADJUSTED_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i])
                 for j in np.arange(0, len(selected_points)):
                     index = selected_points[j]
                     # both points are bad
@@ -427,8 +398,7 @@ def multi_plot_info(argo_data, profile_num):
     axs[1, 1].text(0.5, 0.5, f'Datetime of Profile: {timestamp.date()} {timestamp.strftime('%H:%M:%S')}', fontsize=12, ha='center', va='center')
     axs[1, 1].text(0.5, 0.3, f'Lat: {lat:.2f} Lon: {lon:.2f}', fontsize=12, ha='center', va='center')
     axs[1, 1].axis('off')
-    #plt.title(f"Data Snapshot of {profile_num} on  {from_julian_day(float(juld)).date()}")
-    
+
     # Adjust layout to prevent overlap
     plt.tight_layout()
 
@@ -442,8 +412,6 @@ def manipulate_data():
     profile_num = 86
 
     argo_data = multi_plot_info(argo_data, profile_num)
-    #argo_data = flag_data_points(argo_data, profile_num, "PSAL")
-    raise Exception
 
     # Get rid of range of data
     argo_data = flag_range_data(argo_data, profile_num, "PRES")
@@ -500,8 +468,8 @@ def first_time_run():
 
 def main():
 
-    # first_time_run()
-    manipulate_data()
+    first_time_run()
+    # manipulate_data()
 
 if __name__ == '__main__':
  
