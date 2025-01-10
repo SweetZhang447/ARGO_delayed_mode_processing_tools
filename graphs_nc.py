@@ -8,7 +8,7 @@ import os
 import glob
 import mplcursors
 import copy
-from tools import from_julian_day, read_nc_file, to_julian_day
+from tools import from_julian_day, read_intermediate_nc_file, to_julian_day
 from matplotlib.lines import Line2D
 
 def TS_graph_double(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs, 
@@ -89,19 +89,25 @@ def TS_graph_double(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs,
     plt.tight_layout()
     plt.show()
 
-def pres_v_var(df_PRESs, df_VARs, df_JULD, compare_var, float_name):
+def pres_v_var(df_PRESs, df_VARs, df_JULD, df_prof_nums, compare_var, float_name):
 
     # Make graph
     fig, ax = plt.subplots()
-
+   
     # Normalize df_JULD for color mapping
     norm = plt.Normalize(vmin=df_JULD.min(), vmax=df_JULD.max())
     cmap = plt.get_cmap('jet')
+    
+    # Store lines for cursor connection
+    lines = []
 
     # Plot each profile individually
     for i in range(df_PRESs.shape[0]):
         color = cmap(norm(df_JULD[i]))  # Assign color based on date
-        ax.plot(df_VARs[i, :], df_PRESs[i, :], color=color, alpha=0.7)
+        line, = ax.plot(df_VARs[i, :], df_PRESs[i, :], color=color, alpha=0.7)
+        line.profile_number = df_prof_nums[i]  # Attach profile number to the line
+        line.juld_date = datetime.datetime(1950, 1, 1) + datetime.timedelta(days=float(df_JULD[i]))  # Attach date
+        lines.append(line)
 
     # Invert y-axis and add grid
     plt.gca().invert_yaxis()
@@ -110,15 +116,26 @@ def pres_v_var(df_PRESs, df_VARs, df_JULD, compare_var, float_name):
     # Add colorbar with date formatter
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])  # ScalarMappable needs this, even if not used directly
-    cbar = plt.colorbar(sm, ax=ax, label='Date')
 
+    cbar = plt.colorbar(sm, ax=ax, label='Date')
     # Set the tick locations and labels for the colorbar based on df_JULD
     cbar_ticks = np.linspace(df_JULD.min(), df_JULD.max(), num=5)
     cbar.set_ticks(cbar_ticks)
-
     # Convert colorbar ticks to regular dates
-    cbar_labels = [datetime.datetime(4713, 1, 1, 12) + (datetime.timedelta(days=float(juld) - 1721425.5))  for juld in cbar_ticks]
+    cbar_labels = [datetime.datetime(1950, 1, 1) + (datetime.timedelta(days=float(juld)))  for juld in cbar.get_ticks()]
     cbar.ax.set_yticklabels([dt.strftime('%Y-%m-%d') for dt in cbar_labels])
+
+    # Use mplcursors to display profile numbers on hover
+    cursor = mplcursors.cursor(lines, hover=True)
+    
+    # Attach profile numbers to each segment
+    def annotate_hover(sel):
+        line = sel.artist  # Get the line that was hovered over
+        profile_number = line.profile_number  # Retrieve the attached profile number
+        juld_date = line.juld_date.strftime('%Y-%m-%d')  # Format the date
+        sel.annotation.set_text(f"Profile: {profile_number}\nDate: {juld_date}")
+
+    cursor.connect("add", annotate_hover)
 
     # Set axis labels
     plt.ylabel("Pressure")
@@ -133,10 +150,11 @@ def pres_v_var(df_PRESs, df_VARs, df_JULD, compare_var, float_name):
     plt.title(f"Argo Float {float_name} PRES-{compare_var} Graph")
     plt.show()
 
-def verify_qc_flags_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=None):
+def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=None):
 
     # Separate points based on QC flags
     bad_mask = (qc_arr == 4) | (qc_arr == 3) 
+    
     good_mask = ~bad_mask  
     # Get the original indices of good and bad points
     bad_indices = np.where(bad_mask)[0]
@@ -228,13 +246,13 @@ def verify_qc_flags_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=N
         ax.set_xlabel("Index")
         ax.set_ylabel('Pressure')
         if print_multiplot == False:
-            ax.set_title(f"Pressure Graph for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
+            ax.set_title(f"Flag Point Pressure Graph for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
     else:
         # Add labels and title
         ax.set_xlabel(data_type)
         ax.set_ylabel('Pressure')
         if print_multiplot == False:
-            ax.set_title(f"PRES v {data_type} for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
+            ax.set_title(f"Flag Point PRES v {data_type} for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
     
     if print_multiplot == False:
         plt.show()
@@ -388,11 +406,11 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
     if data_type == "PRES":
         plt.xlabel("Index")
         plt.ylabel('Pressure')
-        plt.title(f"Pressure Graph for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
+        plt.title(f"Flag Range Pressure Graph for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
     else:
         plt.xlabel(data_type)
         plt.ylabel('Pressure')
-        plt.title(f"PRES v {data_type} for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
+        plt.title(f"Flag Range PRES v {data_type} for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
 
     plt.show()
 
@@ -550,7 +568,7 @@ def deep_section_var(pressure, dates, COMP_vars, float_num, deep_section_compare
 
     # Convert julian times to datetime objs and set tick labels
     date_formatter = DateFormatter('%Y-%m-%d')
-    ticks = [datetime.datetime(4713, 1, 1, 12) + (datetime.timedelta(days=float(juld) - 1721425.5))  for juld in ax.get_xticks()]
+    ticks =[datetime.datetime(1950, 1, 1) + (datetime.timedelta(days=float(juld)))  for juld in ax.get_xticks()]
     ax.xaxis.set_major_formatter(date_formatter)
     ax.xaxis.set_ticklabels([dt.strftime('%Y-%m-%d') for dt in ticks])
 
@@ -648,28 +666,6 @@ def TS_graph_single(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs, df_p
     cursor.connect("add", annotate_hover)
     plt.show()
 
-def del_all_nan_slices(PSAL_ADJUSTED, TEMP_ADJUSTED, PRES_ADJUSTED, 
-                       PROFILE_NUMS, LATs, LONs, JULDs):
-    
-    pres_mask = np.isnan(PRES_ADJUSTED).all(axis=1)
-    temp_mask = np.isnan(TEMP_ADJUSTED).all(axis=1)
-    psal_mask = np.isnan(PSAL_ADJUSTED).all(axis=1)
-    # If ANY of these above data arrs are invalid, exclude the data
-    bad_vals_mask =  ~(pres_mask | temp_mask | psal_mask)
-
-    PRES_ADJUSTED = PRES_ADJUSTED[bad_vals_mask]
-    TEMP_ADJUSTED = TEMP_ADJUSTED[bad_vals_mask]
-    PSAL_ADJUSTED = PSAL_ADJUSTED[bad_vals_mask]
-    
-    single_dim_bad_vals_mask = np.where(bad_vals_mask == True)
-    PROFILE_NUMS = PROFILE_NUMS[single_dim_bad_vals_mask]   
-    LATs = LATs[single_dim_bad_vals_mask]
-    LONs = LONs[single_dim_bad_vals_mask]
-    JULDs = JULDs[single_dim_bad_vals_mask]
-
-    return (PSAL_ADJUSTED, TEMP_ADJUSTED, PRES_ADJUSTED, 
-            PROFILE_NUMS, LATs, LONs, JULDs, bad_vals_mask)
-
 def del_bad_points(PRES_ADJUSTED_QC, TEMP_ADJUSTED_QC, PSAL_ADJUSTED_QC,
                    PSAL_ADJUSTED, TEMP_ADJUSTED, PRES_ADJUSTED):
     
@@ -696,23 +692,11 @@ def main():
 
     nc_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_0"
     float_name_1 = "F10051_0"
-    (PRESs, TEMPs, PSALs, COUNTs, 
-     JULDs, JULD_LOCATIONs, LATs, LONs, JULD_QC, POSITION_QC, 
-     PSAL_ADJUSTED, PSAL_ADJUSTED_ERROR, PSAL_ADJUSTED_QC, 
-     TEMP_ADJUSTED, TEMP_ADJUSTED_ERROR, TEMP_ADJUSTED_QC, 
-     PRES_ADJUSTED, PRES_ADJUSTED_ERROR, PRES_ADJUSTED_QC,
-     PSAL_QC, TEMP_QC, PRES_QC, CNDC_QC,
-     PROFILE_NUMS, CNDC_ADJUSTED_QC, QC_FLAG_CHECK) = read_nc_file(nc_filepath)
+    argo_data_1 = read_intermediate_nc_file(nc_filepath)
     
     nc_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_1"
     float_name_2 = "F10051_1"
-    (PRESs_2, TEMPs_2, PSALs_2, COUNTs_2, 
-     JULDs_2, JULD_LOCATIONs_2, LATs_2, LONs_2, JULD_QC_2, POSITION_QC_2, 
-     PSAL_ADJUSTED_2, PSAL_ADJUSTED_ERROR_2, PSAL_ADJUSTED_QC_2, 
-     TEMP_ADJUSTED_2, TEMP_ADJUSTED_ERROR_2, TEMP_ADJUSTED_QC_2, 
-     PRES_ADJUSTED_2, PRES_ADJUSTED_ERROR_2, PRES_ADJUSTED_QC_2,
-     PSAL_QC_2, TEMP_QC_2, PRES_QC_2, CNDC_QC_2,
-     PROFILE_NUMS_2, CNDC_ADJUSTED_QC_2, QC_FLAG_CHECK_2) = read_nc_file(nc_filepath)
+    argo_data_2 = read_intermediate_nc_file(nc_filepath)
     
     # Make sure arr vals marked as bad are reflected across ALL arrays
     """
@@ -723,48 +707,14 @@ def main():
     """
 
     # Get rid of all nan slices
-    (PSAL_ADJUSTED, TEMP_ADJUSTED, PRES_ADJUSTED, 
-     PROFILE_NUMS, LATs, LONs, JULDs, bad_vals_mask) = del_all_nan_slices(PSAL_ADJUSTED, TEMP_ADJUSTED, PRES_ADJUSTED, 
-                                                                          PROFILE_NUMS, LATs, LONs, JULDs)
-    (PSAL_ADJUSTED_2, TEMP_ADJUSTED_2, PRES_ADJUSTED_2, 
-     PROFILE_NUMS_2, LATs_2, LONs_2, JULDs_2, bad_vals_mask_2) = del_all_nan_slices(PSAL_ADJUSTED_2, TEMP_ADJUSTED_2, PRES_ADJUSTED_2, 
-                                                                                    PROFILE_NUMS_2, LATs_2, LONs_2, JULDs_2)
-    
+    #argo_data_1 = del_all_nan_slices(argo_data_1)
+    #argo_data_2 = del_all_nan_slices(argo_data_2)
+
+    raise Exception
     #TS_graph_double(PSAL_ADJUSTED, TEMP_ADJUSTED, JULDs, LONs, LATs, PRES_ADJUSTED, LATs_2, LONs_2, JULDs_2, PRES_ADJUSTED_2, PSAL_ADJUSTED_2, TEMP_ADJUSTED_2, float_name_1, float_name_2)
     TS_graph_single(PSAL_ADJUSTED_2, TEMP_ADJUSTED_2, JULDs_2, LONs_2, LATs_2, PRES_ADJUSTED_2, PROFILE_NUMS_2, float_name_2)
     TS_graph_single(PSAL_ADJUSTED, TEMP_ADJUSTED, JULDs, LONs, LATs, PRES_ADJUSTED, PROFILE_NUMS, float_name_1)
-    raise Exception
-    # Generates pressure versus (salinity/ temp)
-    compare_var_pres = "PSAL"
-    if float_num == "F10051":
-        if compare_var_pres == "TEMP":
-            COMP_var = TEMP_ADJUSTED
-        elif compare_var_pres == "PSAL":
-            COMP_var = PSAL_ADJUSTED
-        pres_v_var(PRES_ADJUSTED, COMP_var, JULDs, compare_var_pres, float_num)
-    if float_num == "F9186":
-        if compare_var_pres == "TEMP":
-            COMP_var = TEMP_ADJUSTED_2
-        elif compare_var_pres == "PSAL":
-            COMP_var = PSAL_ADJUSTED_2
-        pres_v_var(PRES_ADJUSTED_2, COMP_var, JULDs_2, compare_var_pres, float_num)
-    
    
-    # Generates pressure versus (salinity/ temp)
-    compare_var_section = "PSAL"
-    if float_num == "F10051":
-        if compare_var_section == "TEMP":
-            COMP_vars = TEMP_ADJUSTED
-        elif compare_var_section == "PSAL":
-            COMP_vars = PSAL_ADJUSTED
-        deep_section_var(PRES_ADJUSTED, JULDs, COMP_vars, float_num, compare_var_section)
-    if float_num == "F9186":
-        if compare_var_pres == "TEMP":
-            COMP_vars = TEMP_ADJUSTED_2
-        elif compare_var_pres == "PSAL":
-            COMP_vars = PSAL_ADJUSTED_2
-        deep_section_var(PRES_ADJUSTED_2, JULDs_2, COMP_vars, float_num, compare_var_section)
-  
 if __name__ == '__main__':
  
     main()

@@ -27,8 +27,131 @@ def to_julian_day(date_obj):
 
     return julian_day
 
+def del_all_nan_slices(argo_data):
+    
+    pres_mask = np.isnan(argo_data["PRES_ADJUSTED"]).all(axis=1)
+    temp_mask = np.isnan(argo_data["TEMP_ADJUSTED"]).all(axis=1)
+    psal_mask = np.isnan(argo_data["PSAL_ADJUSTED"]).all(axis=1)
+    # If ANY of these above data arrs are invalid, exclude the data
+    bad_vals_mask =  ~(pres_mask | temp_mask | psal_mask)
 
-def read_nc_file(filepath):
+    argo_data["PRES_ADJUSTED"] = argo_data["PRES_ADJUSTED"][bad_vals_mask]
+    argo_data["TEMP_ADJUSTED"] = argo_data["TEMP_ADJUSTED"][bad_vals_mask]
+    argo_data["PSAL_ADJUSTED"] = argo_data["PSAL_ADJUSTED"][bad_vals_mask]
+    
+    single_dim_bad_vals_mask = np.where(bad_vals_mask == True)
+    argo_data["PROFILE_NUMS"] = argo_data["PROFILE_NUMS"][single_dim_bad_vals_mask]   
+    argo_data["LATs"] = argo_data["LATs"][single_dim_bad_vals_mask]
+    argo_data["LONs"] = argo_data["LONs"][single_dim_bad_vals_mask]
+    argo_data["JULDs"] = argo_data["JULDs"][single_dim_bad_vals_mask]
+
+    return argo_data
+
+def make_intermediate_nc_file(argo_data, dest_filepath, float_num):
+    
+    for i in np.arange(len(argo_data["PROFILE_NUMS"])):
+
+        prof_num = int(argo_data["PROFILE_NUMS"][i])
+        output_filename = os.path.join(dest_filepath, f"{float_num}-{prof_num:03}.nc")
+        nc = nc4.Dataset(output_filename, 'w')
+
+        # Set global attributes
+        # TODO: make more detailed later
+        nc.author = 'Sweet Zhang'
+
+        # Get index to remove traling NaNs
+        nan_index = np.where(~np.isnan(argo_data["PRESs"][i, :]))[0][-1] + 1
+
+        # Create dimensions - name + length
+        length = len(argo_data["PRESs"][i, :nan_index])
+        record_dim = nc.createDimension('records', length)
+        single_dim = nc.createDimension('single_record', 1)
+
+        # create vars
+        profile_nums_var = nc.createVariable('PROFILE_NUM', 'f4', 'single_record')
+        profile_nums_var[:] = prof_num
+
+        pressure_var = nc.createVariable('PRES', 'f4', 'records')
+        pressure_var.units = 'DBAR'
+        pressure_var[:] = argo_data["PRESs"][i, :nan_index]
+
+        temperature_var = nc.createVariable('TEMP', 'f4', 'records')
+        temperature_var.units = 'CELSIUS'
+        temperature_var[:] = argo_data["TEMPs"][i, :nan_index]
+
+        salinity_var = nc.createVariable('PSAL', 'f4', 'records')
+        salinity_var.units = 'PSU'
+        salinity_var[:] = argo_data["PSALs"][i, :nan_index]
+
+        counts_var = nc.createVariable('COUNTS', 'f4', 'records')
+        counts_var[:] = argo_data["COUNTs"][i, :nan_index]
+
+        juld_var =  nc.createVariable('JULD', 'f4', 'single_record')
+        juld_var[:] = argo_data["JULDs"][i]
+
+        juld_location_var =  nc.createVariable('JULD_LOCATION', 'f4', 'single_record')
+        juld_location_var[:] = argo_data["JULD_LOCATIONs"][i]
+
+        lat_var = nc.createVariable('LAT', 'f4', 'single_record')
+        lat_var[:] = argo_data["LATs"][i]
+
+        lon_var = nc.createVariable('LON', 'f4', 'single_record')
+        lon_var[:] = argo_data["LONs"][i]
+
+        POSITION_QC_var = nc.createVariable('POSITION_QC', 'f4', 'single_record')
+        POSITION_QC_var[:] = argo_data["POSITION_QC"][i]
+
+        JULD_QC_var = nc.createVariable('JULD_QC', 'f4', 'single_record')
+        JULD_QC_var[:] = argo_data["JULD_QC"][i]
+
+        PSAL_ADJUSTED_VAR = nc.createVariable('PSAL_ADJUSTED', 'f4', 'records')
+        PSAL_ADJUSTED_VAR[:] = argo_data["PSAL_ADJUSTED"][i, :nan_index]
+
+        PSAL_ADJUSTED_ERROR_VAR = nc.createVariable('PSAL_ADJUSTED_ERROR', 'f4', 'records')
+        PSAL_ADJUSTED_ERROR_VAR[:] = argo_data["PSAL_ADJUSTED_ERROR"][i, :nan_index]
+
+        PSAL_ADJUSTED_QC_VAR = nc.createVariable('PSAL_ADJUSTED_QC', 'f4', 'records')
+        PSAL_ADJUSTED_QC_VAR[:] = argo_data["PSAL_ADJUSTED_QC"][i, :nan_index]
+
+        TEMP_ADJUSTED_VAR = nc.createVariable('TEMP_ADJUSTED', 'f4', 'records')
+        TEMP_ADJUSTED_VAR[:] = argo_data["TEMP_ADJUSTED"][i, :nan_index]
+
+        TEMP_ADJUSTED_ERROR_VAR = nc.createVariable('TEMP_ADJUSTED_ERROR', 'f4', 'records')
+        TEMP_ADJUSTED_ERROR_VAR[:] = argo_data["TEMP_ADJUSTED_ERROR"][i, :nan_index]
+
+        TEMP_ADJUSTED_QC_VAR = nc.createVariable('TEMP_ADJUSTED_QC', 'f4', 'records')
+        TEMP_ADJUSTED_QC_VAR[:] = argo_data["TEMP_ADJUSTED_QC"][i, :nan_index]
+
+        PRES_ADJUSTED_VAR = nc.createVariable('PRES_ADJUSTED', 'f4', 'records')
+        PRES_ADJUSTED_VAR[:] = argo_data["PRES_ADJUSTED"][i, :nan_index]
+
+        PRES_ADJUSTED_ERROR_VAR = nc.createVariable('PRES_ADJUSTED_ERROR', 'f4', 'records')
+        PRES_ADJUSTED_ERROR_VAR[:] = argo_data["PRES_ADJUSTED_ERROR"][i, :nan_index]
+
+        PRES_ADJUSTED_QC_VAR = nc.createVariable('PRES_ADJUSTED_QC', 'f4', 'records')
+        PRES_ADJUSTED_QC_VAR[:] = argo_data["PRES_ADJUSTED_QC"][i, :nan_index]
+        
+        CNDC_ADJUSTED_QC_VAR = nc.createVariable('CNDC_ADJUSTED_QC', 'f4', 'records')
+        CNDC_ADJUSTED_QC_VAR[:] = argo_data["CNDC_ADJUSTED_QC"][i, :nan_index]
+
+        PSAL_QC_VAR = nc.createVariable('PSAL_QC', 'f4', 'records')
+        PSAL_QC_VAR[:] = argo_data["PSAL_QC"][i, :nan_index]
+
+        TEMP_QC_VAR = nc.createVariable('TEMP_QC', 'f4', 'records')
+        TEMP_QC_VAR[:] = argo_data["TEMP_QC"][i, :nan_index]
+
+        PRES_QC_VAR = nc.createVariable('PRES_QC', 'f4', 'records')
+        PRES_QC_VAR[:] = argo_data["PRES_QC"][i, :nan_index]
+
+        CNDC_QC_VAR = nc.createVariable('CNDC_QC', 'f4', 'records')
+        CNDC_QC_VAR[:] = argo_data["CNDC_QC"][i, :nan_index]
+
+        QC_FLAG_CHECK_VAR = nc.createVariable('QC_FLAG_CHECK', 'f4', 'single_record')
+        QC_FLAG_CHECK_VAR[:] = argo_data["QC_FLAG_CHECK"][i]
+
+        nc.close()
+
+def read_intermediate_nc_file(filepath):
 
     # init temp arrs
     PROFILE_NUMS = []

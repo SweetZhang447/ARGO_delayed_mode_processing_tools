@@ -1,5 +1,5 @@
 from graphs_nc import del_bad_points
-from tools import read_nc_file
+from tools import read_intermediate_nc_file
 import numpy as np
 import matplotlib.pyplot as plt
 import gsw
@@ -10,7 +10,7 @@ import os
 import glob
 import mplcursors
 import copy
-from tools import read_nc_file
+from tools import read_intermediate_nc_file
 
 def avg_var_graph(df_JULDs, avg_var_1, df_JULDs_2, avg_var_2, avg_var, float_name_1, float_name_2, difference=None, sign=None):
     
@@ -121,7 +121,7 @@ def main():
      PSAL_ADJUSTED, PSAL_ADJUSTED_ERROR, PSAL_ADJUSTED_QC, 
      TEMP_ADJUSTED, TEMP_ADJUSTED_ERROR, TEMP_ADJUSTED_QC, 
      PRES_ADJUSTED, PRES_ADJUSTED_ERROR, PRES_ADJUSTED_QC,
-     PROFILE_NUMS, CNDC_ADJUSTED_QC) = read_nc_file(nc_filepath)
+     PROFILE_NUMS, CNDC_ADJUSTED_QC) = read_intermediate_nc_file(nc_filepath)
     
     nc_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_1"
     float_name_2 = "F10051"
@@ -130,7 +130,7 @@ def main():
      PSAL_ADJUSTED_2, PSAL_ADJUSTED_ERROR_2, PSAL_ADJUSTED_QC_2, 
      TEMP_ADJUSTED_2, TEMP_ADJUSTED_ERROR_2, TEMP_ADJUSTED_QC_2, 
      PRES_ADJUSTED_2, PRES_ADJUSTED_ERROR_2, PRES_ADJUSTED_QC_2,
-     PROFILE_NUMS_2) = read_nc_file(nc_filepath)
+     PROFILE_NUMS_2) = read_intermediate_nc_file(nc_filepath)
     
     # Get rid of all nan slices
     # returns a bad_vals_mask in case further manipulation is needed w/ arr vals
