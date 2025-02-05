@@ -47,11 +47,23 @@ def del_all_nan_slices(argo_data):
 
     return argo_data
 
-def make_intermediate_nc_file(argo_data, dest_filepath, float_num):
+def make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num = None):
+    # if profile_num is not none, it means we want to generate a NC file for only 1 profile
+    # in the dictionary of profiles 
     
-    for i in np.arange(len(argo_data["PROFILE_NUMS"])):
+    if profile_num is None:
+        iterate_len_profile_nums = np.arange(len(argo_data["PROFILE_NUMS"]))
+    else:
+        iterate_len_profile_nums = [0]
 
-        prof_num = int(argo_data["PROFILE_NUMS"][i])
+    for i in iterate_len_profile_nums:
+        
+        if profile_num is None:
+            prof_num = int(argo_data["PROFILE_NUMS"][i])
+        else:
+            i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
+            prof_num = int(profile_num)
+
         output_filename = os.path.join(dest_filepath, f"{float_num}-{prof_num:03}.nc")
         nc = nc4.Dataset(output_filename, 'w')
 
@@ -83,8 +95,25 @@ def make_intermediate_nc_file(argo_data, dest_filepath, float_num):
         salinity_var.units = 'PSU'
         salinity_var[:] = argo_data["PSALs"][i, :nan_index]
 
-        counts_var = nc.createVariable('COUNTS', 'f4', 'records')
-        counts_var[:] = argo_data["COUNTs"][i, :nan_index]
+        cndc_var = nc.createVariable('CNDC', 'f4', 'records')
+        cndc_var.units = "mhos/m"
+        cndc_var[:] = argo_data["CNDCs"][i, :nan_index]
+
+        temp_cndc_var = nc.createVariable('TEMP_CNDC', 'f4', 'records')
+        temp_cndc_var.units = 'degree_celsius'
+        temp_cndc_var[:] = argo_data["TEMP_CNDCs"][i, :nan_index]
+
+        temp_cndc_qc_var = nc.createVariable('TEMP_CNDC_QC', 'f4', 'records')
+        temp_cndc_qc_var[:] = argo_data["TEMP_CNDC_QC"][i, :nan_index]
+
+        offset_var = nc.createVariable('PRES_OFFSET', 'f4', 'single_record')
+        offset_var[:] = argo_data["PRES_OFFSET"][i]
+
+        counts_var = nc.createVariable('NB_SAMPLE_CTD', 'f4', 'records')
+        counts_var[:] = argo_data["NB_SAMPLE_CTD"][i, :nan_index]
+        
+        counts_qc_var = nc.createVariable('NB_SAMPLE_CTD_QC', 'f4', 'records')
+        counts_qc_var[:] = argo_data["NB_SAMPLE_CTD_QC"][i, :nan_index]
 
         juld_var =  nc.createVariable('JULD', 'f4', 'single_record')
         juld_var[:] = argo_data["JULDs"][i]
@@ -107,17 +136,11 @@ def make_intermediate_nc_file(argo_data, dest_filepath, float_num):
         PSAL_ADJUSTED_VAR = nc.createVariable('PSAL_ADJUSTED', 'f4', 'records')
         PSAL_ADJUSTED_VAR[:] = argo_data["PSAL_ADJUSTED"][i, :nan_index]
 
-        PSAL_ADJUSTED_ERROR_VAR = nc.createVariable('PSAL_ADJUSTED_ERROR', 'f4', 'records')
-        PSAL_ADJUSTED_ERROR_VAR[:] = argo_data["PSAL_ADJUSTED_ERROR"][i, :nan_index]
-
         PSAL_ADJUSTED_QC_VAR = nc.createVariable('PSAL_ADJUSTED_QC', 'f4', 'records')
         PSAL_ADJUSTED_QC_VAR[:] = argo_data["PSAL_ADJUSTED_QC"][i, :nan_index]
 
         TEMP_ADJUSTED_VAR = nc.createVariable('TEMP_ADJUSTED', 'f4', 'records')
         TEMP_ADJUSTED_VAR[:] = argo_data["TEMP_ADJUSTED"][i, :nan_index]
-
-        TEMP_ADJUSTED_ERROR_VAR = nc.createVariable('TEMP_ADJUSTED_ERROR', 'f4', 'records')
-        TEMP_ADJUSTED_ERROR_VAR[:] = argo_data["TEMP_ADJUSTED_ERROR"][i, :nan_index]
 
         TEMP_ADJUSTED_QC_VAR = nc.createVariable('TEMP_ADJUSTED_QC', 'f4', 'records')
         TEMP_ADJUSTED_QC_VAR[:] = argo_data["TEMP_ADJUSTED_QC"][i, :nan_index]
@@ -125,11 +148,11 @@ def make_intermediate_nc_file(argo_data, dest_filepath, float_num):
         PRES_ADJUSTED_VAR = nc.createVariable('PRES_ADJUSTED', 'f4', 'records')
         PRES_ADJUSTED_VAR[:] = argo_data["PRES_ADJUSTED"][i, :nan_index]
 
-        PRES_ADJUSTED_ERROR_VAR = nc.createVariable('PRES_ADJUSTED_ERROR', 'f4', 'records')
-        PRES_ADJUSTED_ERROR_VAR[:] = argo_data["PRES_ADJUSTED_ERROR"][i, :nan_index]
-
         PRES_ADJUSTED_QC_VAR = nc.createVariable('PRES_ADJUSTED_QC', 'f4', 'records')
         PRES_ADJUSTED_QC_VAR[:] = argo_data["PRES_ADJUSTED_QC"][i, :nan_index]
+
+        CNDC_ADJUSTED_VAR = nc.createVariable('CNDC_ADJUSTED', 'f4', 'records')
+        CNDC_ADJUSTED_VAR[:] = argo_data["CNDC_ADJUSTED"][i, :nan_index]
         
         CNDC_ADJUSTED_QC_VAR = nc.createVariable('CNDC_ADJUSTED_QC', 'f4', 'records')
         CNDC_ADJUSTED_QC_VAR[:] = argo_data["CNDC_ADJUSTED_QC"][i, :nan_index]
@@ -154,40 +177,40 @@ def make_intermediate_nc_file(argo_data, dest_filepath, float_num):
 def read_intermediate_nc_file(filepath):
 
     # init temp arrs
-    PROFILE_NUMS = []
-
-    PRESs = []
-    TEMPs = []
-    PSALs = [] 
-    COUNTs = []
+    CNDCs = []
+    CNDC_ADJUSTED = []
+    CNDC_ADJUSTED_QC = []
+    CNDC_QC = []
 
     JULDs = [] 
     JULD_LOCATIONs = []
-    LATs = []
-    LONs = []
     JULD_QC = []
+    LATs = []
+    LONs = []    
+    NB_SAMPLE_CTDs = []
+    NB_SAMPLE_CTD_QC = []
     POSITION_QC = []
-
-    PSAL_ADJUSTED = []
-    PSAL_ADJUSTED_ERROR = []
-    PSAL_ADJUSTED_QC = []
-
-    TEMP_ADJUSTED = []
-    TEMP_ADJUSTED_ERROR = []
-    TEMP_ADJUSTED_QC = []
-
+    
+    PRESs = []
     PRES_ADJUSTED = []
-    PRES_ADJUSTED_ERROR = []
     PRES_ADJUSTED_QC = []
-
-    CNDC_ADJUSTED_QC = []
-
-    PSAL_QC = []
-    TEMP_QC = []
+    PRES_OFFSET = []
     PRES_QC = []
-    CNDC_QC = []
 
+    PROFILE_NUMS = []
     QC_FLAG_CHECK = []
+
+    PSALs = [] 
+    PSAL_ADJUSTED = []
+    PSAL_ADJUSTED_QC = []
+    PSAL_QC = []    
+    
+    TEMPs = []
+    TEMP_ADJUSTED = []
+    TEMP_ADJUSTED_QC = []
+    TEMP_CNDCs = []
+    TEMP_CNDC_QC = []
+    TEMP_QC = []
     
     files = sorted(glob.glob(os.path.join(filepath, "*.nc")))
 
@@ -204,108 +227,110 @@ def read_intermediate_nc_file(filepath):
             print("Skipping file: {} due to missing data".format(os.path.basename(f)))
             # TODO: add in QC flags that properly mark data as bad
         else:
-            # Read in Profile Numbers
-            PROFILE_NUMS.append(int(float_dataset.variables['PROFILE_NUM'][:].filled(np.nan)[0]))
+            try:
+                CNDCs.append(float_dataset.variables['CNDC'][:].filled(np.nan))
+            except KeyError as e:
+                CNDCs.append(float_dataset.variables['CNDCs'][:].filled(np.nan))
+
+            CNDC_ADJUSTED.append(float_dataset.variables['CNDC_ADJUSTED'][:].filled(np.nan))
+            CNDC_ADJUSTED_QC.append(float_dataset.variables['CNDC_ADJUSTED_QC'][:].filled(np.nan))
+            CNDC_QC.append(float_dataset.variables['CNDC_QC'][:].filled(np.nan))
             
-            # Read in Lat/Lons + QC flags 
-            LATs.append(float_dataset.variables['LAT'][:].filled(np.nan))
-            LONs.append(float_dataset.variables['LON'][:].filled(np.nan))
             JULDs.append(float_dataset.variables['JULD'][:].filled(np.nan))
             JULD_LOCATIONs.append(float_dataset.variables['JULD_LOCATION'][:].filled(np.nan))
-            POSITION_QC.append(float_dataset.variables['POSITION_QC'][:].filled(np.nan))
             JULD_QC.append(float_dataset.variables['JULD_QC'][:].filled(np.nan))
+            LATs.append(float_dataset.variables['LAT'][:].filled(np.nan))
+            LONs.append(float_dataset.variables['LON'][:].filled(np.nan))
+            NB_SAMPLE_CTDs.append(float_dataset.variables['NB_SAMPLE_CTD'][:].filled(np.nan))
+            NB_SAMPLE_CTD_QC.append(float_dataset.variables['NB_SAMPLE_CTD_QC'][:].filled(np.nan))
+            POSITION_QC.append(float_dataset.variables['POSITION_QC'][:].filled(np.nan))
 
-            # Read in data arrs
             PRESs.append(float_dataset.variables['PRES'][:].filled(np.nan))
-            TEMPs.append(float_dataset.variables['TEMP'][:].filled(np.nan))
-            PSALs.append(float_dataset.variables['PSAL'][:].filled(np.nan))
-            COUNTs.append(float_dataset.variables['COUNTS'][:].filled(np.nan))
-
-            # Read in QC flags
-            # NOTE: there shoudn't be any NANs since we set it in beginning to arr of 0s
-            PSAL_ADJUSTED_QC.append(float_dataset.variables['PSAL_ADJUSTED_QC'][:].filled(np.nan))
-            TEMP_ADJUSTED_QC.append(float_dataset.variables['TEMP_ADJUSTED_QC'][:].filled(np.nan))
-            PRES_ADJUSTED_QC.append(float_dataset.variables['PRES_ADJUSTED_QC'][:].filled(np.nan))
-            CNDC_ADJUSTED_QC.append(float_dataset.variables['CNDC_ADJUSTED_QC'][:].filled(np.nan))
-            
-            PSAL_ADJUSTED.append(float_dataset.variables['PSAL_ADJUSTED'][:].filled(np.nan))
-            TEMP_ADJUSTED.append(float_dataset.variables['TEMP_ADJUSTED'][:].filled(np.nan))
             PRES_ADJUSTED.append(float_dataset.variables['PRES_ADJUSTED'][:].filled(np.nan))
-
-            PSAL_ADJUSTED_ERROR.append(float_dataset.variables['PSAL_ADJUSTED_ERROR'][:].filled(np.nan))
-            TEMP_ADJUSTED_ERROR.append(float_dataset.variables['TEMP_ADJUSTED_ERROR'][:].filled(np.nan))      
-            PRES_ADJUSTED_ERROR.append(float_dataset.variables['PRES_ADJUSTED_ERROR'][:].filled(np.nan))
-            
-            PSAL_QC.append(float_dataset.variables['PSAL_QC'][:].filled(np.nan))
-            TEMP_QC.append(float_dataset.variables['TEMP_QC'][:].filled(np.nan))
+            PRES_ADJUSTED_QC.append(float_dataset.variables['PRES_ADJUSTED_QC'][:].filled(np.nan))
+            PRES_OFFSET.append(float_dataset.variables['PRES_OFFSET'][:].filled(np.nan))
             PRES_QC.append(float_dataset.variables['PRES_QC'][:].filled(np.nan))
-            CNDC_QC.append(float_dataset.variables['CNDC_QC'][:].filled(np.nan))
 
+            PROFILE_NUMS.append(int(float_dataset.variables['PROFILE_NUM'][:].filled(np.nan)[0]))
             QC_FLAG_CHECK.append(float_dataset.variables['QC_FLAG_CHECK'][:].filled(np.nan))
+
+            PSALs.append(float_dataset.variables['PSAL'][:].filled(np.nan))
+            PSAL_ADJUSTED.append(float_dataset.variables['PSAL_ADJUSTED'][:].filled(np.nan))
+            PSAL_ADJUSTED_QC.append(float_dataset.variables['PSAL_ADJUSTED_QC'][:].filled(np.nan))
+            PSAL_QC.append(float_dataset.variables['PSAL_QC'][:].filled(np.nan))
+            
+            TEMPs.append(float_dataset.variables['TEMP'][:].filled(np.nan))
+            TEMP_ADJUSTED.append(float_dataset.variables['TEMP_ADJUSTED'][:].filled(np.nan))
+            TEMP_ADJUSTED_QC.append(float_dataset.variables['TEMP_ADJUSTED_QC'][:].filled(np.nan))
+            TEMP_CNDCs.append(float_dataset.variables['TEMP_CNDC'][:].filled(np.nan))
+            TEMP_CNDC_QC.append(float_dataset.variables['TEMP_CNDC_QC'][:].filled(np.nan))
+            TEMP_QC.append(float_dataset.variables['TEMP_QC'][:].filled(np.nan))
     
-
-    PRESs = np.squeeze(np.array(list(itertools.zip_longest(*PRESs, fillvalue=np.nan))).T)
-    TEMPs = np.squeeze(np.array(list(itertools.zip_longest(*TEMPs, fillvalue=np.nan))).T)
-    PSALs = np.squeeze(np.array(list(itertools.zip_longest(*PSALs, fillvalue=np.nan))).T)
-    COUNTs = np.squeeze(np.array(list(itertools.zip_longest(*COUNTs, fillvalue=np.nan))).T)
-
+    CNDCs = np.squeeze(np.array(list(itertools.zip_longest(*CNDCs, fillvalue=np.nan))).T)
+    CNDC_ADJUSTED = np.squeeze(np.array(list(itertools.zip_longest(*CNDC_ADJUSTED, fillvalue=np.nan))).T)
+    CNDC_ADJUSTED_QC = np.squeeze(np.array(list(itertools.zip_longest(*CNDC_ADJUSTED_QC, fillvalue=np.nan))).T)
+    CNDC_QC = np.squeeze(np.array(list(itertools.zip_longest(*CNDC_QC, fillvalue=np.nan))).T)        
+    
     JULDs = np.squeeze(np.array(JULDs))
     JULD_LOCATIONs = np.squeeze(np.array(JULD_LOCATIONs))
+    JULD_QC = np.squeeze(np.array(JULD_QC))
     LATs = np.squeeze(np.array(LATs))
     LONs = np.squeeze(np.array(LONs))
-    JULD_QC = np.squeeze(np.array(JULD_QC))
+    NB_SAMPLE_CTDs = np.squeeze(np.array(list(itertools.zip_longest(*NB_SAMPLE_CTDs, fillvalue=np.nan))).T)
+    NB_SAMPLE_CTD_QC = np.squeeze(np.array(list(itertools.zip_longest(*NB_SAMPLE_CTD_QC, fillvalue=np.nan))).T)
     POSITION_QC = np.squeeze(np.array(POSITION_QC))
 
-    PROFILE_NUMS = np.squeeze(np.array(PROFILE_NUMS))
-
-    PSAL_ADJUSTED = np.squeeze(np.array(list(itertools.zip_longest(*PSAL_ADJUSTED, fillvalue=np.nan))).T)
-    PSAL_ADJUSTED_ERROR = np.squeeze(np.array(list(itertools.zip_longest(*PSAL_ADJUSTED_ERROR, fillvalue=np.nan))).T)
-    PSAL_ADJUSTED_QC = np.squeeze(np.array(list(itertools.zip_longest(*PSAL_ADJUSTED_QC, fillvalue=np.nan))).T)
-
-    TEMP_ADJUSTED = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_ADJUSTED, fillvalue=np.nan))).T)
-    TEMP_ADJUSTED_ERROR = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_ADJUSTED_ERROR, fillvalue=np.nan))).T)
-    TEMP_ADJUSTED_QC = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_ADJUSTED_QC, fillvalue=np.nan))).T)
-
+    PRESs = np.squeeze(np.array(list(itertools.zip_longest(*PRESs, fillvalue=np.nan))).T)
     PRES_ADJUSTED = np.squeeze(np.array(list(itertools.zip_longest(*PRES_ADJUSTED, fillvalue=np.nan))).T)
-    PRES_ADJUSTED_ERROR = np.squeeze(np.array(list(itertools.zip_longest(*PRES_ADJUSTED_ERROR, fillvalue=np.nan))).T)
     PRES_ADJUSTED_QC = np.squeeze(np.array(list(itertools.zip_longest(*PRES_ADJUSTED_QC, fillvalue=np.nan))).T)
-
-    CNDC_ADJUSTED_QC = np.squeeze(np.array(list(itertools.zip_longest(*CNDC_ADJUSTED_QC, fillvalue=np.nan))).T)
-
-    PSAL_QC = np.squeeze(np.array(list(itertools.zip_longest(*PSAL_QC, fillvalue=np.nan))).T)
-    TEMP_QC = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_QC, fillvalue=np.nan))).T)
+    PRES_OFFSET = np.squeeze(np.array(PRES_OFFSET))
     PRES_QC = np.squeeze(np.array(list(itertools.zip_longest(*PRES_QC, fillvalue=np.nan))).T)
-    CNDC_QC = np.squeeze(np.array(list(itertools.zip_longest(*CNDC_QC, fillvalue=np.nan))).T)
-
+    
+    PROFILE_NUMS = np.squeeze(np.array(PROFILE_NUMS))
     QC_FLAG_CHECK = np.squeeze(np.array(QC_FLAG_CHECK))
 
+    PSALs = np.squeeze(np.array(list(itertools.zip_longest(*PSALs, fillvalue=np.nan))).T)
+    PSAL_ADJUSTED = np.squeeze(np.array(list(itertools.zip_longest(*PSAL_ADJUSTED, fillvalue=np.nan))).T)
+    PSAL_ADJUSTED_QC = np.squeeze(np.array(list(itertools.zip_longest(*PSAL_ADJUSTED_QC, fillvalue=np.nan))).T)
+    PSAL_QC = np.squeeze(np.array(list(itertools.zip_longest(*PSAL_QC, fillvalue=np.nan))).T)
+    
+    TEMPs = np.squeeze(np.array(list(itertools.zip_longest(*TEMPs, fillvalue=np.nan))).T)
+    TEMP_ADJUSTED = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_ADJUSTED, fillvalue=np.nan))).T)
+    TEMP_ADJUSTED_QC = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_ADJUSTED_QC, fillvalue=np.nan))).T)
+    TEMP_CNDCs = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_CNDCs, fillvalue=np.nan))).T)
+    TEMP_CNDC_QC = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_CNDC_QC, fillvalue=np.nan))).T)
+    TEMP_QC = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_QC, fillvalue=np.nan))).T)
+
     argo_data = {
-        "PRESs": PRESs,
-        "TEMPs": TEMPs,
-        "PSALs": PSALs,
-        "COUNTs": COUNTs,
+        "CNDCs": CNDCs,
+        "CNDC_ADJUSTED": CNDC_ADJUSTED,
+        "CNDC_ADJUSTED_QC": CNDC_ADJUSTED_QC,
+        "CNDC_QC": CNDC_QC,
         "JULDs": JULDs,
         "JULD_LOCATIONs": JULD_LOCATIONs,
+        "JULD_QC": JULD_QC,
         "LATs": LATs,
         "LONs": LONs,
-        "JULD_QC": JULD_QC,
-        "POSITION_QC": POSITION_QC,
-        "PSAL_ADJUSTED": PSAL_ADJUSTED,
-        "PSAL_ADJUSTED_ERROR": PSAL_ADJUSTED_ERROR,
-        "PSAL_ADJUSTED_QC": PSAL_ADJUSTED_QC,
-        "TEMP_ADJUSTED": TEMP_ADJUSTED,
-        "TEMP_ADJUSTED_ERROR": TEMP_ADJUSTED_ERROR,
-        "TEMP_ADJUSTED_QC": TEMP_ADJUSTED_QC,
+        "NB_SAMPLE_CTD": NB_SAMPLE_CTDs,
+        "NB_SAMPLE_CTD_QC": NB_SAMPLE_CTD_QC,
+        "POSITION_QC": POSITION_QC,        
+        "PRESs": PRESs,
         "PRES_ADJUSTED": PRES_ADJUSTED,
-        "PRES_ADJUSTED_ERROR": PRES_ADJUSTED_ERROR,
         "PRES_ADJUSTED_QC": PRES_ADJUSTED_QC,
-        "PSAL_QC": PSAL_QC,
-        "TEMP_QC": TEMP_QC,
+        "PRES_OFFSET": PRES_OFFSET,
         "PRES_QC": PRES_QC,
-        "CNDC_QC": CNDC_QC,
-        "PROFILE_NUMS": PROFILE_NUMS,
-        "CNDC_ADJUSTED_QC": CNDC_ADJUSTED_QC,
+        "PROFILE_NUMS": PROFILE_NUMS,        
         "QC_FLAG_CHECK": QC_FLAG_CHECK,
+        "PSALs": PSALs,     
+        "PSAL_ADJUSTED": PSAL_ADJUSTED,
+        "PSAL_ADJUSTED_QC": PSAL_ADJUSTED_QC,     
+        "PSAL_QC": PSAL_QC,
+        "TEMPs": TEMPs,
+        "TEMP_ADJUSTED": TEMP_ADJUSTED,
+        "TEMP_ADJUSTED_QC": TEMP_ADJUSTED_QC,
+        "TEMP_CNDCs": TEMP_CNDCs,
+        "TEMP_CNDC_QC": TEMP_CNDC_QC,
+        "TEMP_QC": TEMP_QC
     }
 
     return argo_data

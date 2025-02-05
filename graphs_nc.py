@@ -89,7 +89,7 @@ def TS_graph_double(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs,
     plt.tight_layout()
     plt.show()
 
-def pres_v_var(df_PRESs, df_VARs, df_JULD, df_prof_nums, compare_var, float_name):
+def pres_v_var_all(df_PRESs, df_VARs, df_JULD, df_prof_nums, compare_var, float_name):
 
     # Make graph
     fig, ax = plt.subplots()
@@ -97,9 +97,12 @@ def pres_v_var(df_PRESs, df_VARs, df_JULD, df_prof_nums, compare_var, float_name
     # Normalize df_JULD for color mapping
     norm = plt.Normalize(vmin=df_JULD.min(), vmax=df_JULD.max())
     cmap = plt.get_cmap('jet')
-    
+
+    # Store profile nums
+    selected_profiles = set()
     # Store lines for cursor connection
     lines = []
+    hovered_line = None
 
     # Plot each profile individually
     for i in range(df_PRESs.shape[0]):
@@ -127,15 +130,29 @@ def pres_v_var(df_PRESs, df_VARs, df_JULD, df_prof_nums, compare_var, float_name
 
     # Use mplcursors to display profile numbers on hover
     cursor = mplcursors.cursor(lines, hover=True)
-    
     # Attach profile numbers to each segment
     def annotate_hover(sel):
-        line = sel.artist  # Get the line that was hovered over
-        profile_number = line.profile_number  # Retrieve the attached profile number
-        juld_date = line.juld_date.strftime('%Y-%m-%d')  # Format the date
+        nonlocal hovered_line
+        hovered_line = sel.artist  # Get the line that was hovered over
+        profile_number = hovered_line.profile_number  # Retrieve the attached profile number
+        juld_date = hovered_line.juld_date.strftime('%Y-%m-%d')  # Format the date
         sel.annotation.set_text(f"Profile: {profile_number}\nDate: {juld_date}")
-
     cursor.connect("add", annotate_hover)
+
+    # Add click event
+    def on_click(event):
+        nonlocal selected_profiles, hovered_line
+        if hovered_line:
+            profile_number = hovered_line.profile_number
+            if profile_number in selected_profiles:
+                selected_profiles.remove(profile_number)
+                print(f"Removing {profile_number}")
+            else:
+                selected_profiles.add(profile_number)
+                print(f"Adding {profile_number}")
+            print(f"Selected Profiles: {selected_profiles}")
+            print("=====================" + "====" * len(selected_profiles))
+    fig.canvas.mpl_connect('button_press_event', on_click)
 
     # Set axis labels
     plt.ylabel("Pressure")
@@ -150,46 +167,48 @@ def pres_v_var(df_PRESs, df_VARs, df_JULD, df_prof_nums, compare_var, float_name
     plt.title(f"Argo Float {float_name} PRES-{compare_var} Graph")
     plt.show()
 
-def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=None):
+    return selected_profiles
 
-    # Separate points based on QC flags
-    bad_mask = (qc_arr == 4) | (qc_arr == 3) 
-    
-    good_mask = ~bad_mask  
-    # Get the original indices of good and bad points
-    bad_indices = np.where(bad_mask)[0]
-    good_indices = np.where(good_mask)[0]
-    # Array to store selected points
-    selected_points_bad = []  
-    selected_points_good = [] 
+def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=None, figure= None):
+
     print_multiplot = False
-
     if ax is None:
         # Create the figure and axes
         fig, ax = plt.subplots()
     else:
         print_multiplot = True
-
-    # init color arrs
-    colors_good = ['green' for _ in range(len(PRES[good_mask]))]
-    colors_bad = ['red' for _ in range(len(PRES[bad_mask]))]
-
+        fig = figure
+    
+    colors = []
+    selected_points = []
+    for qc in qc_arr:
+        if qc == 4:                 # bad
+            colors.append('red')
+            selected_points.append(4)
+        elif qc == 3:               # prob bad
+            colors.append('orange')
+            selected_points.append(3)
+        elif qc == 2:               # prob good
+            colors.append('aqua')
+            selected_points.append(2)
+        else:                       # qc == 1, val is good
+            colors.append('green')
+            selected_points.append(1)
+            
     # Plot good points (green)
     if data_type == "PRES":
         # Scatter plot for good and bad points
-        scatter_good = ax.scatter(np.arange(len(PRES))[good_mask], PRES[good_mask], color=colors_good, s=30, alpha=0.9, label='Good Data')
-        scatter_bad = ax.scatter(np.arange(len(PRES))[bad_mask], PRES[bad_mask], color=colors_bad, s=30, alpha=0.9, label='Bad Data')
+        scatter_plt = ax.scatter(np.arange(len(PRES)), PRES, color=colors, s=30, alpha=0.9, label='Good Data')
     else:
         ax.plot(var, PRES, color='blue', linewidth=2)
-        scatter_good = ax.scatter(var[good_mask], PRES[good_mask], color=colors_good, s=30, alpha=0.9)
-        scatter_bad = ax.scatter(var[bad_mask], PRES[bad_mask], color=colors_bad, s=30, alpha=0.9)
+        scatter_plt = ax.scatter(var, PRES, color=colors, s=30, alpha=0.9)
 
     # Invert y-axis and add grid
     ax.invert_yaxis()
     ax.grid(visible=True)
 
     # Hover functionality
-    cursor = mplcursors.cursor([scatter_good, scatter_bad], hover=True)
+    cursor = mplcursors.cursor([scatter_plt], hover=True)
     def annotate_hover(sel):
         x, y = sel.target
         sel.annotation.set_text(f"{data_type}: {x:.2f}\nPRES: {y}")
@@ -197,49 +216,46 @@ def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=N
 
     # Click event
     def on_click(event):
-        for scatter, mask, subset_colors, label in [
-            (scatter_bad, bad_indices, colors_bad, "QC_vals"),
-            (scatter_good, good_indices, colors_good, "normal_vals")
-        ]:
+        nonlocal selected_points
+        for scatter, graph_colors in [(scatter_plt, colors)]:
             cont, ind = scatter.contains(event)
             if cont:
-                clicked_idx = mask[ind["ind"][0]]  # Global index
-                subset_idx = ind["ind"][0]  # Subset index
-                if data_type == "PRES":
-                    var_val = PRES[clicked_idx]
+                clicked_idx = ind["ind"][0] 
+                # Get org color of point
+                org_color = graph_colors[clicked_idx]
+                # Cycle through color options
+                if org_color == 'red':
+                    graph_colors[clicked_idx] = 'orange'
+                    selected_points[clicked_idx] = 3
+                elif org_color == 'orange':
+                    graph_colors[clicked_idx] = 'aqua'
+                    selected_points[clicked_idx] = 2
+                elif org_color == 'aqua':
+                    graph_colors[clicked_idx] = 'green'
+                    selected_points[clicked_idx] = 1
                 else:
-                    var_val = var[clicked_idx]
+                    graph_colors[clicked_idx] = 'red'
+                    selected_points[clicked_idx] = 4
+                
+                # Update the color of the clicked point
+                scatter.set_color(graph_colors)
+                fig.canvas.draw_idle()
 
-                if label == "QC_vals":
-                    if clicked_idx not in selected_points_bad:
-                        selected_points_bad.append(clicked_idx)
-                        subset_colors[subset_idx] = 'green'
-                        scatter.set_color(subset_colors)
-                        fig.canvas.draw_idle()
-                        print(f"Point saved: Index={clicked_idx}, {data_type}={var_val:.2f}, Profile_num={profile_num}, Auto-set QC val")
-                    else:
-                        selected_points_bad.remove(clicked_idx)
-                        subset_colors[subset_idx] = 'red'
-                        scatter.set_color(subset_colors)
-                        fig.canvas.draw_idle()
-                        print(f"Point removed: Index={clicked_idx}, {data_type}={var_val:.2f}, Profile_num={profile_num}, Auto-set QC val")
-
-                if label == "normal_vals":
-                    if clicked_idx not in selected_points_good:
-                        selected_points_good.append(clicked_idx)
-                        subset_colors[subset_idx] = 'red'
-                        scatter.set_color(subset_colors)
-                        fig.canvas.draw_idle()
-                        print(f"Point saved: Index={clicked_idx}, {data_type}={var_val:.2f}, Profile_num={profile_num}, Array Value")
-                    else:
-                        selected_points_good.remove(clicked_idx)
-                        subset_colors[subset_idx] = 'green'
-                        scatter.set_color(subset_colors)
-                        fig.canvas.draw_idle()
-                        print(f"Point removed: Index={clicked_idx}, {data_type}={var_val:.2f}, Profile_num={profile_num}, Array Value")
+    fig.canvas.mpl_connect('button_press_event', on_click)
     
-    if print_multiplot == False:
-        fig.canvas.mpl_connect('button_press_event', on_click)
+    # Custom legend elements
+    custom_legend = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),    # Both bad
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),   # Salinity bad
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', markersize=10), # Temperature bad
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10)   # Good data
+    ]
+    # Add legend to the plot
+    ax.legend(
+        custom_legend,
+        ["Bad", "Probably Bad", "Probably Good", "Good"],  # Custom labels
+        loc='lower left', title="Data Quality"
+    )
 
     if data_type == "PRES":
         # Add labels and title
@@ -257,7 +273,7 @@ def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=N
     if print_multiplot == False:
         plt.show()
 
-    return selected_points_bad, selected_points_good
+    return selected_points
     
 def merge_ranges(ranges):
     # Sort the ranges by their start values
@@ -470,7 +486,7 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
             selected_points.append(2)
         else:
             colors.append('green')    # Neither is bad
-            selected_points.append(1)
+            selected_points.append(1) 
 
     # Plot data
     if ax is None:
@@ -519,7 +535,6 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
                 # Update the color of the clicked point
                 scatter.set_color(graph_colors)
                 fig.canvas.draw_idle()
-
     if print_multiplot == False:
         fig.canvas.mpl_connect('button_press_event', on_click)
 
@@ -538,7 +553,7 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
     ax.legend(
         custom_legend,
         ["Both bad", "Salinity bad", "Temperature bad", "Good data"],  # Custom labels
-        loc='upper left', title="Data Quality"
+        loc='lower left', title="Data Quality"
     )
 
     ax.set_xlabel('Salinity (PSU)')
@@ -551,7 +566,7 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
 
     return selected_points
 
-def deep_section_var(pressure, dates, COMP_vars, float_num, deep_section_compare_var):
+def deep_section_var_all(pressure, dates, COMP_vars, float_num, deep_section_compare_var):
 
     # Create a meshgrid for dates and pressure, matching the temperature data
     X, Y = np.meshgrid(dates, np.linspace(np.nanmin(pressure), np.nanmax(pressure), pressure.shape[1]), indexing='ij')
@@ -583,13 +598,16 @@ def deep_section_var(pressure, dates, COMP_vars, float_num, deep_section_compare
 
     # Set labels and title
     ax.set_xlabel('Date')
-    ax.set_ylabel('Pressure (dbar)')
+    ax.set_ylabel('Index')
     ax.set_title(f'Argo Float {float_num} Deep Section {deep_section_compare_var} Graph')
 
     plt.show()
 
-def TS_graph_single(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs, df_prof_nums, float_name):
+def TS_graph_single_dataset_all_profile(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs, df_prof_nums, float_name):
     
+    selected_profiles = set()
+    segment_index = None
+
     df_SALs_copy = copy.deepcopy(df_SALs)
     df_TEMPs_copy = copy.deepcopy(df_TEMPs)
     
@@ -659,12 +677,29 @@ def TS_graph_single(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs, df_p
     
     # Attach profile numbers to each segment
     def annotate_hover(sel):
+        nonlocal segment_index
         segment_index = sel.index[0]  # Index of the segment in LineCollection
         profile_number = ref_lc.profile_numbers[segment_index]  # Get the corresponding profile number
         sel.annotation.set_text(f"Profile: {profile_number}")
-            
+    
+    def on_click(event):
+        nonlocal selected_profiles, segment_index
+        if segment_index:
+            profile_number = ref_lc.profile_numbers[segment_index]
+            if profile_number in selected_profiles:
+                selected_profiles.remove(profile_number)
+                print(f"Removing {profile_number}")
+            else:
+                selected_profiles.add(profile_number)
+                print(f"Adding {profile_number}")
+            print(f"Selected Profiles: {selected_profiles}")
+            print("=====================" + "====" * len(selected_profiles))
+    fig.canvas.mpl_connect('button_press_event', on_click)
+
     cursor.connect("add", annotate_hover)
     plt.show()
+
+    return selected_profiles
 
 def del_bad_points(PRES_ADJUSTED_QC, TEMP_ADJUSTED_QC, PSAL_ADJUSTED_QC,
                    PSAL_ADJUSTED, TEMP_ADJUSTED, PRES_ADJUSTED):
@@ -712,8 +747,8 @@ def main():
 
     raise Exception
     #TS_graph_double(PSAL_ADJUSTED, TEMP_ADJUSTED, JULDs, LONs, LATs, PRES_ADJUSTED, LATs_2, LONs_2, JULDs_2, PRES_ADJUSTED_2, PSAL_ADJUSTED_2, TEMP_ADJUSTED_2, float_name_1, float_name_2)
-    TS_graph_single(PSAL_ADJUSTED_2, TEMP_ADJUSTED_2, JULDs_2, LONs_2, LATs_2, PRES_ADJUSTED_2, PROFILE_NUMS_2, float_name_2)
-    TS_graph_single(PSAL_ADJUSTED, TEMP_ADJUSTED, JULDs, LONs, LATs, PRES_ADJUSTED, PROFILE_NUMS, float_name_1)
+    TS_graph_single_dataset_all_profile(PSAL_ADJUSTED_2, TEMP_ADJUSTED_2, JULDs_2, LONs_2, LATs_2, PRES_ADJUSTED_2, PROFILE_NUMS_2, float_name_2)
+    TS_graph_single_dataset_all_profile(PSAL_ADJUSTED, TEMP_ADJUSTED, JULDs, LONs, LATs, PRES_ADJUSTED, PROFILE_NUMS, float_name_1)
    
 if __name__ == '__main__':
  
