@@ -1,3 +1,5 @@
+import itertools
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import gsw
@@ -8,8 +10,11 @@ import os
 import glob
 import mplcursors
 import copy
+import RBRargo3_celltm
 from tools import from_julian_day, read_intermediate_nc_file, to_julian_day
 from matplotlib.lines import Line2D
+import csv
+from scipy.interpolate import interp1d
 
 def TS_graph_double(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs, 
         df_LATs_2, df_LONs_2, df_JULDs_2, df_PRESs_2, df_PSALs_2, df_TEMPs_2,
@@ -697,6 +702,7 @@ def TS_graph_single_dataset_all_profile(df_SALs, df_TEMPs, df_JULD, df_LONs, df_
     fig.canvas.mpl_connect('button_press_event', on_click)
 
     cursor.connect("add", annotate_hover)
+    plt.grid(True)
     plt.show()
 
     return selected_profiles
@@ -719,7 +725,329 @@ def del_bad_points(PRES_ADJUSTED_QC, TEMP_ADJUSTED_QC, PSAL_ADJUSTED_QC,
     
     return PSAL_ADJUSTED, TEMP_ADJUSTED, PRES_ADJUSTED
 
+
+def make_thermal_inertia_graph():
+
+    fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_first_time_run"
+    argo_data = read_intermediate_nc_file(fp)
+
+    fig, ax = plt.subplots()
+
+    norm = plt.Normalize(vmin=argo_data["JULDs"].min(), vmax=argo_data["JULDs"].max())
+    cmap = plt.get_cmap('jet')
+
+    for i in np.arange(argo_data["TEMPs"].shape[0]):
+
+        color = cmap(norm(argo_data["JULDs"][i]))  # Assign color based on date
+        plt.plot(argo_data["TEMPs"][i] - argo_data["TEMP_CNDCs"][i],  argo_data["PRES_ADJUSTED"][i], linewidth=0.5, color = color)
+        #plt.plot(argo_data["TEMPs"][i],  argo_data["PRES_ADJUSTED"][i], linewidth=0.5, color = color)
+        #plt.plot(argo_data["TEMP_CNDCs"][i],  argo_data["PRES_ADJUSTED"][i], linewidth=0.5, color = color)
+
+    # Add colorbar with date formatter
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])  # ScalarMappable needs this, even if not used directly
+    cbar = plt.colorbar(sm, ax=ax, label='Date')
+    # Set the tick locations and labels for the colorbar based on df_JULD
+    cbar_ticks = np.linspace(argo_data["JULDs"].min(), argo_data["JULDs"].max(), num=5)
+    cbar.set_ticks(cbar_ticks)
+    # Convert colorbar ticks to regular dates
+    cbar_labels = [datetime.datetime(1950, 1, 1) + (datetime.timedelta(days=float(juld)))  for juld in cbar.get_ticks()]
+    cbar.ax.set_yticklabels([dt.strftime('%Y-%m-%d') for dt in cbar_labels])
+
+    plt.xlabel('TEMP - TEMP_CNDC °C')
+    plt.ylabel('Pressure Adjusted (dbar)')
+    plt.title('F10051 TEMP - TEMP_CNDC Difference vs Pressure')
+
+    plt.gca().invert_yaxis()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+def read_csv_file_for_thermal_inertia_graph_with_timestamps(input_filepath):
+    
+    all_files = (p.resolve() for p in Path(input_filepath).glob("*") if p.name.endswith("system_log.txt") or p.name.endswith("science_log.csv"))
+        
+    files_dictionary = {}
+    for file_path in all_files:
+        filename = file_path.name
+        profile_num = filename[9:12]  # Extract the profile number
+        if profile_num not in files_dictionary:
+            files_dictionary[profile_num] = {}
+        if "science_log.csv" in filename:
+            files_dictionary[profile_num]["science_log"] = file_path
+        elif "system_log.txt" in filename:
+            files_dictionary[profile_num]["system_log"] = file_path
+    
+    PRESs, TEMPs, SALs, CNDCs, TEMP_CNDCs, COUNTs, TIMESTAMPs, PROF_NUMs = [], [], [], [], [], [], [], []
+    
+    # Process each profile only if both files are present
+    for profile_num, file_paths in files_dictionary.items():
+
+        if "science_log" in file_paths and "system_log" in file_paths:
+            # Initialize variables
+            pressures, temps, sals, cndc, temp_cndc, counts, timestamps = [], [], [], [], [], [], []
+            with open(file_paths["science_log"], mode='r') as sci_file:
+                reader = csv.reader(sci_file)
+                PTSCIinfo = []
+                for row in reader:
+                    if(row[0] == "LGR_CP_PTSCI"):
+                        PTSCIinfo.append(row)  
+            # Process data from science file
+            for row in PTSCIinfo:
+                pressures.append(float(row[2]))
+                temps.append(float(row[3]))
+                sals.append(float(row[4]))
+                cndc.append(float(row[5]))
+                temp_cndc.append(float(row[6]))
+                counts.append(int(row[-1]))
+                timestamps.append(row[1])
+
+            if len(PTSCIinfo) > 2:
+                # convert timestamps
+                times = np.array([datetime.datetime.strptime(ts, "%Y%m%dT%H%M%S") for ts in timestamps])
+                # Compute seconds relative to the first timestamp
+                time_deltas = np.array([(dt - times[0]).total_seconds() for dt in times])
+        
+                # convert arrs to np arrs
+                pressures = np.asarray(pressures)
+                temps = np.asarray(temps)
+                sals = np.asarray(sals)
+                cndc = np.asarray(cndc)
+                temp_cndc = np.asarray(temp_cndc)
+                counts = np.asarray(counts)
+                timestamps = np.asarray(time_deltas)
+    
+                # Init vars for sys file
+                offset = None
+                with open(file_paths["system_log"], mode='r') as sys_file:
+                    for line in sys_file:
+                        if 'surface pressure offset' in line:
+                            line = line.split(' ')
+                            offset = line[-2]
+                if offset is None:
+                    print(f"Profile {profile_num} is missing 'surface pressure offset' in system log")
+                else:
+                    pressures =  pressures - float(offset)
+                    # append data to overall arr
+                    PRESs.append(pressures)
+                    TEMPs.append(temps)
+                    SALs.append(sals)
+                    CNDCs.append(cndc)
+                    TEMP_CNDCs.append(temp_cndc)
+                    COUNTs.append(counts)
+                    TIMESTAMPs.append(timestamps)
+                    PROF_NUMs.append(profile_num)
+            else:
+                print(f"Skipping profile {profile_num}: PTSCI info missing")
+        else:
+           print(f"Skipping profile {profile_num}: Missing required files.")
+    
+    """
+    PRESs = np.squeeze(np.array(list(itertools.zip_longest(*PRESs, fillvalue=np.nan))).T)
+    TEMPs = np.squeeze(np.array(list(itertools.zip_longest(*TEMPs, fillvalue=np.nan))).T)
+    SALs = np.squeeze(np.array(list(itertools.zip_longest(*SALs, fillvalue=np.nan))).T)
+    CNDCs = np.squeeze(np.array(list(itertools.zip_longest(*CNDCs, fillvalue=np.nan))).T)
+    TEMP_CNDCs = np.squeeze(np.array(list(itertools.zip_longest(*TEMP_CNDCs, fillvalue=np.nan))).T)
+    COUNTs = np.squeeze(np.array(list(itertools.zip_longest(*COUNTs, fillvalue=np.nan))).T)
+    TIMESTAMPs = np.squeeze(np.array(list(itertools.zip_longest(*TIMESTAMPs, fillvalue=np.nan))).T)
+    """
+
+    return PRESs, TEMPs, SALs, CNDCs, TEMP_CNDCs, COUNTs, TIMESTAMPs, PROF_NUMs
+
+def make_thermal_inertia_graph_with_timestamps():
+
+    filepath = "C:\\Users\\szswe\\Downloads\\graphs_thermal_inertia\\DATA\\F10051_all_data_for_temp_graphs_csv"
+    # filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F9186_raw_csv"
+    PRESs, TEMPs, SALs, CNDCs, TEMP_CNDCs, COUNTs, TIMESTAMPs = read_csv_file_for_thermal_inertia_graph_with_timestamps(filepath)
+
+    # Read in intermediate NETCDF files for QC arrs
+    fp = "C:\\Users\\szswe\\Downloads\\graphs_thermal_inertia\\DATA\\F10051_after_visual_inspection_for_temp_graphs"
+    argo_data = read_intermediate_nc_file(fp)
+    # Get rid of bad points in QC arr
+    mask = (argo_data["TEMP_ADJUSTED_QC"] == 3) | (argo_data["TEMP_ADJUSTED_QC"] == 4)
+    for i in np.arange(0, len(mask) - 1):
+        nan_index = np.where(~np.isnan(argo_data["PRESs"][i, :]))[0][-1] + 1
+        TEMPs[i][mask[i, :nan_index] == True] = np.nan
+        TEMP_CNDCs[i][mask[i, :nan_index] == True] = np.nan
+    # Get rid of points where count is too high
+    for i in np.arange(0, len(COUNTs)):
+        TEMPs[i][np.where(COUNTs[i] > 50)[0]] = np.nan
+        TEMP_CNDCs[i][np.where(COUNTs[i] > 50)[0]] = np.nan
+
+    fig, ax = plt.subplots()
+   
+    # Define the uniform time grid based on the maximum time across all profiles
+    all_differences = []
+    max_time = max(time_seq[-1] for time_seq in TIMESTAMPs)
+    uniform_time_mean = np.arange(0, max_time, 10)
+    
+    for i in np.arange(0, len(TIMESTAMPs)):
+
+        time_seconds = TIMESTAMPs[i]
+
+        #   Create a uniform time grid for this row
+        #uniform_time = np.arange(0, time_seconds[-1], 10)
+        #   Interpolate TEMP_CNDCs onto the uniform time grid
+        #temp_cndc_interp = np.interp(uniform_time, time_seconds - 245, TEMP_CNDCs[i])
+        #temp_interp = np.interp(uniform_time, time_seconds, TEMPs[i])
+        #plt.plot(temp_interp - temp_cndc_interp, uniform_time, linewidth=0.5) 
+
+        temp_cndc_interp = np.interp(uniform_time_mean, time_seconds - 150, TEMP_CNDCs[i])
+        temp_interp = np.interp(uniform_time_mean, time_seconds, TEMPs[i])
+        difference = temp_interp - temp_cndc_interp
+        all_differences.append(difference)
+
+    # find the mean difference 
+    all_differences = np.array(all_differences)
+    mean_difference = np.nanmean(all_differences, axis=0)
+    plt.plot(mean_difference, uniform_time_mean, linewidth=1.5)
+
+    # Formatting
+    plt.ylabel("Time (seconds)")
+    #plt.xlabel("TEMP - TEMP_CNDC °C'")
+    #plt.title("TEMP - TEMP_CNDC interpolated onto uniform time grid")
+    plt.xlabel('Mean TEMP - TEMP_CNDC')
+    plt.title('Mean Temperature Difference Over Time')
+    plt.grid()
+    plt.show()
+
+def single_prof_datasnapshot(profile_num, argo_data, PSAL_ADJUSTED_Padj_CTM):
+    
+    i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
+
+    sal_arr = np.squeeze(PSAL_ADJUSTED_Padj_CTM[i])
+    temp_arr = argo_data["TEMP_ADJUSTED"][i]
+    pres_arr = argo_data["PRES_ADJUSTED"][i]
+    temp_qc = argo_data["TEMP_ADJUSTED_QC"][i]
+    psal_qc = argo_data["PSAL_ADJUSTED_QC"][i]
+    lon = argo_data["LONs"][i]
+    lat = argo_data["LATs"][i]
+    juld = argo_data["JULDs"][i]
+
+    # Create a 2x2 grid of subplots
+    fig, axs = plt.subplots(2, 2, figsize=(10, 8))
+
+    # Populate the top-left subplot
+    selected_points_temp = flag_point_data_graphs(temp_arr, pres_arr, "TEMP", temp_qc, argo_data["PROFILE_NUMS"][i], juld, ax=axs[0, 0], figure=fig)
+
+    # Populate the top-right subplot
+    selected_points_psal = flag_point_data_graphs(sal_arr, pres_arr, "PSAL", psal_qc, argo_data["PROFILE_NUMS"][i], juld, ax=axs[0, 1], figure=fig)
+
+    # Populate the bottom-left subplot
+    flag_TS_data_graphs(sal_arr, temp_arr, juld, lon, lat, pres_arr, profile_num, temp_qc, psal_qc, ax=axs[1, 0])
+
+    # Fill bottom-right subplot with text
+    timestamp = from_julian_day(float(juld))
+    axs[1, 1].text(0.5, 0.7, f'Data Snapshot of Profile: {profile_num}', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.5, f'Datetime of Profile: {timestamp.date()} {timestamp.strftime('%H:%M:%S')}', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.3, f'Lat: {lat:.2f} Lon: {lon:.2f}', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.1, f'Flag QC-point feature enabled for TEMP + PSAL graphs', fontsize=12, ha='center', va='center')
+    axs[1, 1].axis('off')
+
+    axs[1,0].grid(True)
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+    plt.show()
+
+def compute_cellTM():
+    
+    # Read in intermediate NETCDF files for QC arrs
+    # fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
+    fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_vi_new"
+    float_num = "F9186_ADJUSTED_SAL"
+    use_timestamps = True
+    argo_data = read_intermediate_nc_file(fp)
+ 
+    cell_tms = []
+    for i in np.arange(len(argo_data["NB_SAMPLE_CTD"])):
+        nan_index = np.where(~np.isnan(argo_data["PRESs"][i, :]))[0][-1] + 1
+        
+        if use_timestamps == True:
+            # NO FIRST COUNT
+            # TIMESTAMP and COUNTs arrays are equal
+            times = []
+            for ts in argo_data["PTSCI_TIMESTAMPS"][i, :nan_index]:
+                times.append(datetime.datetime.strptime(str(ts)[:-2], "%Y%m%d%H%M%S"))
+            times = np.array(times)
+            time_deltas = []
+            for dt in times:
+                time_deltas.append(abs((dt - times[0]).total_seconds()))
+            time_deltas = np.array(time_deltas)
+            elptime = np.asarray(time_deltas)
+        else:
+            # KEEP FIRST COUNT
+            # less trailing points, gets rid of last sum to keep shape
+            elptime = np.cumsum(argo_data["NB_SAMPLE_CTD"][i, :nan_index])
+            elptime = np.insert(elptime, 0, 0)[:-1]
+        
+        # Take data arrays
+        temperature = argo_data["TEMP_ADJUSTED"][i, :nan_index]
+        pressure = argo_data["PRES_ADJUSTED"][i, :nan_index]
+        temp_cndc = argo_data["TEMP_CNDCs"][i, :nan_index]
+
+        # Get rid of bad points 
+        # WHERE COUNTS > 50: PSAL_ADJUSTED_QC, CNDC_ADJUSTED_QC, TEMP_ADJUSTED_QC are set to 3
+        # 1) Get rid of bad points on all levels where COUNTS > 50
+        # NOTE: if we have a level of ALL NaN's the RBR function gets weird... 
+        count_mask = np.where(argo_data["NB_SAMPLE_CTD"][i, :nan_index] > 50)[0]
+        temperature[count_mask] = np.nan
+        #pressure[count_mask] = np.nan
+        #temp_cndc[count_mask] = np.nan
+        # 2) Get rid of bad points where TEMP, PRES, TEMP_CNDC QC arr's == (3/4)
+        temp_mask = np.where(((argo_data["TEMP_ADJUSTED_QC"][i, :nan_index] == 3) | (argo_data["TEMP_ADJUSTED_QC"][i, :nan_index] == 4)))[0]
+        pres_mask = np.where(((argo_data["PRES_ADJUSTED_QC"][i, :nan_index] == 3) | (argo_data["PRES_ADJUSTED_QC"][i, :nan_index] == 4)))[0]
+        temp_cndc_mask = np.where(((argo_data["TEMP_CNDC_QC"][i, :nan_index] == 3) | (argo_data["TEMP_CNDC_QC"][i, :nan_index] == 4)))[0]
+        temperature[temp_mask] = np.nan
+        pressure[pres_mask] = np.nan
+        temp_cndc[temp_cndc_mask] = np.nan
+
+        a = RBRargo3_celltm.RBRargo3_celltm(temperature, pressure, temp_cndc, elptime)
+        cell_tms.append(a)
+
+    cell_tms = np.squeeze(np.array(list(itertools.zip_longest(*cell_tms, fillvalue=np.nan))).T)
+    PSAL_ADJUSTED_Padj_CTM = gsw.SP_from_C(argo_data["CNDCs"] * 10, cell_tms, argo_data["PRES_ADJUSTED"])
+
+    # apply qc_arr to data
+    mask_var = np.isin(argo_data["PSAL_ADJUSTED_QC"], [0, 1, 2])
+    mask_pres = np.isin(argo_data["PRES_ADJUSTED_QC"], [0, 1, 2])
+    mask_temp = np.isin(argo_data["TEMP_ADJUSTED_QC"], [0, 1, 2])
+
+    pres = np.where(mask_pres, argo_data["PRES_ADJUSTED"], np.nan)
+    psal = np.where(mask_var, PSAL_ADJUSTED_Padj_CTM, np.nan)
+    temp = np.where(mask_temp, argo_data["TEMP_ADJUSTED"], np.nan)
+    
+    #pres_v_var_all(pres, psal, argo_data["JULDs"], argo_data["PROFILE_NUMS"], "PSAL", float_num)
+    #TS_graph_single_dataset_all_profile(psal, temp, argo_data["JULDs"], argo_data["LONs"], argo_data["LATs"], pres, argo_data["PROFILE_NUMS"], float_num)
+    #single_prof_datasnapshot(285, argo_data, PSAL_ADJUSTED_Padj_CTM)
+    make_der_graph(argo_data, PSAL_ADJUSTED_Padj_CTM)
+
+def make_der_graph(argo_data, PSAL_ADJUSTED_Padj_CTM):
+
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    fig.suptitle('Thermal Comparison Plots')
+
+    for i in np.arange(len(argo_data["PROFILE_NUMS"])):
+        profile_num = argo_data["PROFILE_NUMS"][i]
+        pres = argo_data["PRES_ADJUSTED"][i]
+        psal_old = argo_data["PSAL_ADJUSTED"][i]
+        psal_new = PSAL_ADJUSTED_Padj_CTM[i]
+        ax1.scatter(psal_old, pres)
+        ax2.plot(psal_new, pres)
+
+
+        plt.show()
+        raise Exception
+
 def main():
+
+
+    # make_thermal_inertia_graph()
+    #make_thermal_inertia_graph_with_timestamps()
+    compute_cellTM()
+
+    raise Exception
    
     shallow_cutoff = 1 # code in this feature
     # generate graphs for F9186 or F10051

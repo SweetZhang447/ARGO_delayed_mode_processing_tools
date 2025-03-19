@@ -7,6 +7,7 @@ from tools import from_julian_day, read_intermediate_nc_file, to_julian_day
 import os 
 import numpy.ma as ma
 import re
+import gsw 
 
 def masked_byte_array_to_str(masked_array):
     """
@@ -29,6 +30,15 @@ def masked_byte_array_to_str(masked_array):
     return filled_array.tobytes().decode('utf-8').replace('\x00', ' ').strip()
 
 def make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = None):
+    """
+    Makes a config ".txt" file for an associated float, inits unknown vars with "None"
+    for user to manually fill in later.
+
+    Args:
+        float_num (str): float number 
+        dest_filepath (str): destination filepath
+        org_argo_netcdf_filepath (str, optional): filepath to an orginal argo netcdf float profile. Defaults to None.
+    """
 
     # Get first file in dir of file 
     if org_argo_netcdf_filepath is not None:
@@ -163,12 +173,21 @@ def make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = None):
 
 def history_qc_test_converter(input_value, mode='decode'):
     """
-    mode: decode
-        - pass in input_val hex number (string)
-        - returns a list of QC tests performed
-    mode: encode
-        - pass in input_val as list of qc_tests (strings)
-        - returns str hex number
+    Maps between a list of QC tests and their associated numerical values. Takes said list
+    and converts them to a hex number (added value of QC test's associated numerical value,
+    converted to a hex number). This mapping goes both ways, so passing in a hex number and setting
+    mode = 'decode' returns list of QC tests performed.
+
+    Args:
+        mode (str, optional): decode, default val
+            - input_val (str): hex number
+            - returns a list of QC tests performed
+        mode (str, optional): encode
+            - input_val (list, str): list of qc_tests names
+            - returns str hex number
+
+    Raises:
+        ValueError: raised when mode passed in is not 'decode' or 'encode'
     """
     qc_tests = {
         2: "Platform Identification test",
@@ -216,6 +235,15 @@ def history_qc_test_converter(input_value, mode='decode'):
         raise ValueError("Invalid mode. Use 'decode' or 'encode'.")
 
 def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
+    """
+    Makes the final version of ARGO Delayed Mode Processed NETCDF File. Variables have
+    complete description names and such.
+
+    Args:
+        final_nc_data_prof (dict): dictionary of all associated parameters needed to generate file.
+        float_num (str): float number
+        dest_filepath (str): destination filepath
+    """
 
 
     output_filename = os.path.join(dest_filepath, f"D{float_num}_{final_nc_data_prof["CYCLE_NUMBER"]:03}.nc")
@@ -698,6 +726,15 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     WMO_INST_TYPE[:] = np.array(np.pad(list(final_nc_data_prof["WMO_INST_TYPE"]), (0, 4 - len(final_nc_data_prof["WMO_INST_TYPE"])), mode='constant', constant_values=' '), dtype='S1')
 
 def calc_overall_profile_qc(qc_arr):
+    """
+    Calculates letter grade for parameters: PROFILE_{PARAM}_QC, based on (number of good vals)/ (total number of levels)
+
+    Args:
+        qc_arr (numpy array): qc array of associated PARAM
+
+    Returns:
+        str: letter grade of PROFILE_{PARAM}_QC, as defined in ARGO delayed mode manual 
+    """
 
     total_levels = len(qc_arr)
     num_of_good = len(np.where((qc_arr == 1) | (qc_arr == 2))[0])
@@ -717,6 +754,18 @@ def calc_overall_profile_qc(qc_arr):
         return 'F'
 
 def format_argo_data(argo_data):
+    """
+    Function to format ARGO data before delayed mode processing. 
+    Procedures include:
+        - for all QC arr's flip 0's to 1's
+        - Set to nan, where {PARAM_ADJUSTED_QC == 4} for all PARAM_ADJUSTED arrs
+
+    Args:
+        argo_data (dict): dictionary of all associated parameters needed to generate delayed mode file.
+
+    Returns:
+        dict: argo_data reformatted 
+    """
 
     # For all QC arr's flip 0's to 1's
     argo_data["JULD_QC"][argo_data["JULD_QC"] == 0] = 1
@@ -736,6 +785,15 @@ def format_argo_data(argo_data):
     return argo_data
 
 def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
+    """_summary_
+
+    Args:
+        final_nc_data_prof (dict): dictionary of all associated parameters needed to generate file.
+        parems_to_fill (list of str, optional): List of HISTORY_{PARAM}s to fill that are not always set. Defaults to None.
+
+    Returns:
+        dict: returns final_nc_data_prof with set HISTORY_{PARAM} values
+    """
     
     # PAREMS that are always set
     final_nc_data_prof["HISTORY_DATE"] = np.vstack([final_nc_data_prof["HISTORY_DATE"], np.array(list(str(datetime.now().strftime("%Y%m%d%H%M%S"))))])
@@ -764,6 +822,16 @@ def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
     return final_nc_data_prof
 
 def set_history_parems(final_nc_data_prof, type_to_set, **kwargs):
+    """
+    This function sets HISTORY_{PARAM} for ARGO delayed mode processing NETCDF files.
+
+    Args:
+        final_nc_data_prof (dict): dictionary of all associated parameters needed to generate file.
+        type_to_set (str): Associated HISTORY_{PARAM} to set
+
+    Returns:
+        dict: returns final_nc_data_prof with set HISTORY_{PARAM} values
+    """
     
     if type_to_set == "SET_IP":
         final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('  IP'))])
@@ -813,6 +881,18 @@ def set_history_parems(final_nc_data_prof, type_to_set, **kwargs):
         final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
     
     return final_nc_data_prof
+    
+def sal_recalc_RBRargo3_3k_procedures(processed_argo_data):
+
+    # Step 1: recompute sal due to compressinility effect  
+    Co = gsw.C_from_SP(processed_argo_data["PSALs"], processed_argo_data["TEMPs"], processed_argo_data["PRESs"])
+    PSAL_ADJUSTED_Padj = gsw.SP_from_C(Co, processed_argo_data["TEMP_ADJUSTED"], processed_argo_data["PRES_ADJUSTED"])
+
+    # Step 2: apply thermal inertia correction 
+    # a) check TEMP_CNDC visually 
+    Cadj = gsw.C_from_SP(PSAL_ADJUSTED_Padj, processed_argo_data["TEMP_ADJUSTED"], processed_argo_data["PRES_ADJUSTED"])
+    # c) estimate elapsed time
+    # d) compute TEMP_celltm
     
 def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = None):
 
@@ -1006,24 +1086,24 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["PRES_ADJUSTED_QC"] = np.squeeze(processed_argo_data["PRES_ADJUSTED_QC"][i, :nan_index])
         final_nc_data_prof["PRES_QC"] = np.squeeze(processed_argo_data["PRES_QC"][i, :nan_index])
 
-        final_nc_data_prof["PSAL"] = np.squeeze(processed_argo_data["PSALs"][i, :nan_index])
-        final_nc_data_prof["PSAL_ADJUSTED"] = np.squeeze(processed_argo_data["PSAL_ADJUSTED"][i, :nan_index])
-        final_nc_data_prof["PSAL_ADJUSTED_QC"] = np.squeeze(processed_argo_data["PSAL_ADJUSTED_QC"][i, :nan_index])
-        final_nc_data_prof["PSAL_QC"] = np.squeeze(processed_argo_data["PSAL_QC"][i, :nan_index])
-
         final_nc_data_prof["TEMP"] = np.squeeze(processed_argo_data["TEMPs"][i, :nan_index])
         final_nc_data_prof["TEMP_ADJUSTED"] = np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index])
         final_nc_data_prof["TEMP_ADJUSTED_QC"] = np.squeeze(processed_argo_data["TEMP_ADJUSTED_QC"][i, :nan_index])
         final_nc_data_prof["TEMP_QC"] = np.squeeze(processed_argo_data["TEMP_QC"][i, :nan_index])
         final_nc_data_prof["TEMP_CNDC"] = np.squeeze(processed_argo_data["TEMP_CNDCs"][i, :nan_index])
         final_nc_data_prof["TEMP_CNDC_QC"] = np.squeeze(processed_argo_data["TEMP_CNDC_QC"][i, :nan_index])
+        
+        final_nc_data_prof["PSAL"] = np.squeeze(processed_argo_data["PSALs"][i, :nan_index])
+        final_nc_data_prof["PSAL_ADJUSTED"] = np.squeeze(processed_argo_data["PSAL_ADJUSTED"][i, :nan_index])
+        final_nc_data_prof["PSAL_ADJUSTED_QC"] = np.squeeze(processed_argo_data["PSAL_ADJUSTED_QC"][i, :nan_index])
+        final_nc_data_prof["PSAL_QC"] = np.squeeze(processed_argo_data["PSAL_QC"][i, :nan_index])
 
         # Set {PAREM}_ADJUSTED_ERROR arrs
         final_nc_data_prof["CNDC_ADJUSTED_ERROR"] = np.full(np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index]).shape, fill_value = CNDC_ADJUSTED_ERROR_FILLVAL)
         final_nc_data_prof["PRES_ADJUSTED_ERROR"] = np.full(np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index]).shape, fill_value = PRES_ADJUSTED_ERROR_FILLVAL)
         final_nc_data_prof["PSAL_ADJUSTED_ERROR"] = np.full(np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index]).shape, fill_value = PSAL_ADJUSTED_ERROR_FILLVAL)
         final_nc_data_prof["TEMP_ADJUSTED_ERROR"] = np.full(np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index]).shape, fill_value = TEMP_ADJUSTED_ERROR_FILLVAL)
- 
+        
         # Set overall profile quality flag
         final_nc_data_prof["PROFILE_CNDC_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["CNDC_ADJUSTED_QC"][i, :nan_index]))
         final_nc_data_prof["PROFILE_NB_SAMPLE_CTD_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["NB_SAMPLE_CTD_QC"][i, :nan_index]))
@@ -1125,14 +1205,15 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["CNDC_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
         final_nc_data_prof["CNDC_ADJUSTED_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
 
+        # TODO: 3.5.2 whereever PARAM_ADJUSTED_QC = 4, PARAM_ADJUSTED + PARAM_ADJUSTED_ERROR = FillVal!!
+
         make_final_nc_files(final_nc_data_prof, float_num, dest_filepath)
 
 def main():
 
-    #float_num = "1902655"
-    float_num = "argo234"
+    float_num = "1902655"
     dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_final"
-    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_1"
+    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
     orgargo_netcdf_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
     config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_final\\1902655_config_file.txt"
     if not os.path.exists(dest_filepath):
@@ -1142,9 +1223,9 @@ def main():
     Pass in an ARGO NETCDF filepath to make config file for parems needed
     to make delayed mode NETCDF file.
     """
-    make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = orgargo_netcdf_filepath)
+    # make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = orgargo_netcdf_filepath)
 
-    #process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = org_argo_netcdf_filepath)
+    process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = orgargo_netcdf_filepath)
 
 if __name__ == '__main__':
     main()

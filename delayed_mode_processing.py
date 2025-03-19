@@ -11,8 +11,20 @@ import copy
 from scipy.interpolate import interp1d
 from graphs_nc import TS_graph_single_dataset_all_profile, deep_section_var_all, flag_TS_data_graphs, flag_range_data_graphs, flag_point_data_graphs, pres_v_var_all
 from tools import from_julian_day, to_julian_day, read_intermediate_nc_file, make_intermediate_nc_file, del_all_nan_slices
+import gsw 
 
 def interp_missing_lat_lons(lats, lons, dates):
+    """
+    Interpolates missing lat/ lon vals
+
+    Args:
+        lats (Numpy arr of floats): Lat values
+        lons (Numpy arr of floats): Lon values
+        dates (Numpy arr of floats): Date values in Julian date format
+
+    Returns:
+        Numpy arr: returns numpy arrs of filled in interpolated lat and lon vals
+    """
 
     # Mask where values are not NaN
     mask_lat = ~np.isnan(lats)
@@ -35,6 +47,16 @@ def interp_missing_lat_lons(lats, lons, dates):
     return interpolated_values_lat, interpolated_values_lon
 
 def interpolate_missing_julian_days(julian_days):
+    """
+    NOT USED
+    returns arr of interpolated julian dates.
+
+    Args:
+        julian_days (Numpy arr of floats): Date values in Julian date format
+
+    Returns:
+        Numpy arr: interpolated julian dates
+    """
     # Convert Julian days to Gregorian dates
     gregorian_dates = [from_julian_day(jd) for jd in julian_days]
     
@@ -53,6 +75,15 @@ def interpolate_missing_julian_days(julian_days):
     return interpolated_julian_days
 
 def lat_lon_check(argo_data):
+    """
+    Checks for missing LAT/LON vals, then interpolated missing vals, setting QC flag for interpolated values to 8.
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values with missing vals filled
+    """
     
     location_mask = np.logical_or(np.isnan(argo_data["LATs"]), np.isnan(argo_data["LONs"]))
     # interp LAT/ LON vals
@@ -64,8 +95,18 @@ def lat_lon_check(argo_data):
     
     return argo_data
 
-# using JULD_LOCATION, we don't want to interp date, we want to fill w/ known val
 def juld_check(argo_data):
+    """
+    Checks for missing values in JULDs. 
+    If missing, first see if JULD_LOCATION has associated value, if so fill in JULDs with said value, setting
+    QC flag to 5. If not, then interpolated missing value and sets QC flag to 8.
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values with missing vals filled
+    """
 
     juld_mask = np.isnan(argo_data["JULDs"])
 
@@ -91,7 +132,16 @@ def juld_check(argo_data):
     return argo_data
 
 def count_check(argo_data):
-    count_mask = np.logical_or(argo_data["NB_SAMPLE_CTD"] > 300,  np.logical_and(argo_data["NB_SAMPLE_CTD"] < 1, argo_data["NB_SAMPLE_CTD"] != -99))
+    """
+    Sets PSAL, CNDC, and TEMP ADJUSTED_QC arrays to 3 where NB_SAMPLE_CTD are > 300 or < 1
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values with {PARAM}_ADJUSTED_QC arrs set
+    """
+    count_mask = np.logical_or(argo_data["NB_SAMPLE_CTD"] > 50,  np.logical_and(argo_data["NB_SAMPLE_CTD"] < 1, argo_data["NB_SAMPLE_CTD"] != -99))
     argo_data["PSAL_ADJUSTED_QC"][count_mask] = 3
     argo_data["CNDC_ADJUSTED_QC"][count_mask] = 3
     argo_data["TEMP_ADJUSTED_QC"][count_mask] = 3
@@ -100,6 +150,15 @@ def count_check(argo_data):
 
 # NOTE: Use this for RBR inductive sensors to flag data too close to surface
 def pres_depth_check(argo_data):
+    """
+    Checks if pressure is less than 1, if so fill PSAL and CNDC ADJUSTED_QC with 4 to indicate bad value.
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values with {PARAM}_ADJUSTED_QC arrs set
+    """
     pres_mask = np.where(argo_data["PRESs"] < 1)
     argo_data["PSAL_ADJUSTED_QC"][pres_mask] = 4
     argo_data["CNDC_ADJUSTED_QC"][pres_mask] = 4
@@ -107,6 +166,9 @@ def pres_depth_check(argo_data):
     return argo_data
 
 def process_autoset_qc_flags(qc_array, adjusted_qc_array, adjusted_data, label, profile_num, julds, pres_data):
+    """
+    REDUNDANT/ NOT USED as of 2/18
+    """
     if not (np.all(qc_array == 0) or np.all(qc_array == 1)):
         if np.any(qc_array == 3) or np.any(qc_array == 4):
             selected_points = flag_point_data_graphs(adjusted_data, pres_data, label, qc_array, profile_num, julds)
@@ -129,12 +191,21 @@ def process_autoset_qc_flags(qc_array, adjusted_qc_array, adjusted_data, label, 
     return False, qc_array, adjusted_qc_array
 
 def verify_autoset_qc_flags(argo_data):
-    
+    """
+    Pops up series of graphs if there are preset {PARAM}_QC values so delayed mode operator can verify their correctness.
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values
+    """
+
     for i in np.arange(len(argo_data["PROFILE_NUMS"])):
         sal_checked = False
         temp_checked = False
         pres_checked = False
-        trigger_ts = False
+        # trigger_ts = False
 
         # Check that QC_FLAG_CHECK has not been set yet
         if argo_data["QC_FLAG_CHECK"][i] == 0:
@@ -144,44 +215,46 @@ def verify_autoset_qc_flags(argo_data):
                 (np.any(argo_data["TEMP_QC"][i] == 3) or np.any(argo_data["TEMP_QC"][i] == 4))) or \
                 ((not (np.all(argo_data["PSAL_QC"][i] == 0) or np.all(argo_data["PSAL_QC"][i] == 1))) and 
                 (np.any(argo_data["PSAL_QC"][i] == 3) or np.any(argo_data["PSAL_QC"][i] == 4))):
-                data_snapshot_graph(argo_data, argo_data["PROFILE_NUMS"][i], first_time_run_module=True)
+                argo_data = data_snapshot_graph(argo_data, argo_data["PROFILE_NUMS"][i])
+                sal_checked = True
+                temp_checked = True
+                pres_checked = True
 
-            pres_checked, argo_data["PRES_QC"][i], argo_data["PRES_ADJUSTED_QC"][i] = process_autoset_qc_flags(argo_data["PRES_QC"][i], argo_data["PRES_ADJUSTED_QC"][i], None, "PRES", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
-            temp_checked, argo_data["TEMP_QC"][i], argo_data["TEMP_ADJUSTED_QC"][i] = process_autoset_qc_flags(argo_data["TEMP_QC"][i], argo_data["TEMP_ADJUSTED_QC"][i], argo_data["TEMP_ADJUSTED"][i], "TEMP", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
-            sal_checked, argo_data["PSAL_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i] = process_autoset_qc_flags(argo_data["PSAL_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i], argo_data["PSAL_ADJUSTED"][i], "PSAL", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
-            # Trigger TS data graph if any flag required checking
-            if temp_checked or sal_checked:
-                trigger_ts = True
-            
-            if trigger_ts == True:
-                selected_points = flag_TS_data_graphs(argo_data["PSAL_ADJUSTED"][i], argo_data["TEMP_ADJUSTED"][i], argo_data["JULDs"][i], argo_data["LONs"][i], argo_data["LATs"][i], argo_data["PRES_ADJUSTED"][i], argo_data["PROFILE_NUMS"][i], argo_data["TEMP_ADJUSTED_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i])
-                for j in np.arange(0, len(selected_points)):
-                    index = selected_points[j]
-                    # both points are bad
-                    if index == 4:
-                        argo_data["PSAL_ADJUSTED_QC"][i][j] = 4
-                        argo_data["PSAL_QC"][i][j] = 4
-                        argo_data["TEMP_ADJUSTED_QC"][i][j] = 4
-                        argo_data["TEMP_QC"][i][j] = 4 
-                    # sal is bad
-                    elif index == 3:
-                        argo_data["PSAL_ADJUSTED_QC"][i][j] = 4
-                        argo_data["PSAL_QC"][i][j] = 4
-                        argo_data["TEMP_ADJUSTED_QC"][i][j] = 1
-                        argo_data["TEMP_QC"][i][j] = 1
-                    # temp is bad
-                    elif index == 2:
-                        argo_data["PSAL_ADJUSTED_QC"][i][j] = 1
-                        argo_data["PSAL_QC"][i][j] = 1
-                        argo_data["TEMP_ADJUSTED_QC"][i][j] = 4
-                        argo_data["TEMP_QC"][i][j] = 4
-                    # index is 1, both points are good
-                    else: 
-                        argo_data["PSAL_ADJUSTED_QC"][i][j] = 1
-                        argo_data["PSAL_QC"][i][j] = 1
-                        argo_data["TEMP_ADJUSTED_QC"][i][j] = 1
-                        argo_data["TEMP_QC"][i][j] = 1 
-                print("Finished setting TEMP_QC and PSAL_QC")
+            # pres_checked, argo_data["PRES_QC"][i], argo_data["PRES_ADJUSTED_QC"][i] = process_autoset_qc_flags(argo_data["PRES_QC"][i], argo_data["PRES_ADJUSTED_QC"][i], None, "PRES", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
+            # temp_checked, argo_data["TEMP_QC"][i], argo_data["TEMP_ADJUSTED_QC"][i] = process_autoset_qc_flags(argo_data["TEMP_QC"][i], argo_data["TEMP_ADJUSTED_QC"][i], argo_data["TEMP_ADJUSTED"][i], "TEMP", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
+            # sal_checked, argo_data["PSAL_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i] = process_autoset_qc_flags(argo_data["PSAL_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i], argo_data["PSAL_ADJUSTED"][i], "PSAL", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
+            # # Trigger TS data graph if any flag required checking
+            # if temp_checked or sal_checked:
+            #     trigger_ts = True
+            # if trigger_ts == True:
+            #     selected_points = flag_TS_data_graphs(argo_data["PSAL_ADJUSTED"][i], argo_data["TEMP_ADJUSTED"][i], argo_data["JULDs"][i], argo_data["LONs"][i], argo_data["LATs"][i], argo_data["PRES_ADJUSTED"][i], argo_data["PROFILE_NUMS"][i], argo_data["TEMP_ADJUSTED_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i])
+            #     for j in np.arange(0, len(selected_points)):
+            #         index = selected_points[j]
+            #         # both points are bad
+            #         if index == 4:
+            #             argo_data["PSAL_ADJUSTED_QC"][i][j] = 4
+            #             argo_data["PSAL_QC"][i][j] = 4
+            #             argo_data["TEMP_ADJUSTED_QC"][i][j] = 4
+            #             argo_data["TEMP_QC"][i][j] = 4 
+            #         # sal is bad
+            #         elif index == 3:
+            #             argo_data["PSAL_ADJUSTED_QC"][i][j] = 4
+            #             argo_data["PSAL_QC"][i][j] = 4
+            #             argo_data["TEMP_ADJUSTED_QC"][i][j] = 1
+            #             argo_data["TEMP_QC"][i][j] = 1
+            #         # temp is bad
+            #         elif index == 2:
+            #             argo_data["PSAL_ADJUSTED_QC"][i][j] = 1
+            #             argo_data["PSAL_QC"][i][j] = 1
+            #             argo_data["TEMP_ADJUSTED_QC"][i][j] = 4
+            #             argo_data["TEMP_QC"][i][j] = 4
+            #         # index is 1, both points are good
+            #         else: 
+            #             argo_data["PSAL_ADJUSTED_QC"][i][j] = 1
+            #             argo_data["PSAL_QC"][i][j] = 1
+            #             argo_data["TEMP_ADJUSTED_QC"][i][j] = 1
+            #             argo_data["TEMP_QC"][i][j] = 1 
+            #     print("Finished setting TEMP_QC and PSAL_QC")
 
             if sal_checked == True and temp_checked == True and pres_checked == True:
                 argo_data["QC_FLAG_CHECK"][i] == 1
@@ -189,6 +262,21 @@ def verify_autoset_qc_flags(argo_data):
     return argo_data
 
 def flag_data_points(argo_data, profile_num, data_type):
+    """
+    Flag data points in {PARAM}_ADJUSTED_QC arrays. Pops out graph pressure v data_type for users
+    to look at data and click through to change QC arr. 
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+        profile_num (int): profile number to look at
+        data_type (str): determine which data arr: PRES, PSAL, or TEMP to look at 
+
+    Raises:
+        Exception: raise Exception if data_type is not PRES, PSAL or TEMP
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values
+    """
 
     i =  np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
     pres_arr = argo_data["PRES_ADJUSTED"][i]
@@ -212,6 +300,21 @@ def flag_data_points(argo_data, profile_num, data_type):
     return argo_data
 
 def flag_range_data(argo_data, profile_num, data_type):
+    """
+    Flag data ranges in {PARAM}_ADJUSTED_QC arrays. Pops out graph pressure v data_type for users
+    to look at data and click through to change QC arr. 
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+        profile_num (int): profile number to look at
+        data_type (str): determine which data arr: PRES, PSAL, or TEMP to look at 
+
+    Raises:
+        Exception: raise Exception if data_type is not PRES, PSAL or TEMP
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values
+    """
 
     i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
     pres_arr = argo_data["PRES_ADJUSTED"][i]
@@ -240,6 +343,21 @@ def flag_range_data(argo_data, profile_num, data_type):
     return argo_data
 
 def flag_TS_data(argo_data, profile_num):
+    """
+    Flag data points in {PARAM}_ADJUSTED_QC arrays. Pops out TS graph for users
+    to look at data and click through to change QC arr. 
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+        profile_num (int): profile number to look at
+        data_type (str): determine which data arr: PRES, PSAL, or TEMP to look at 
+
+    Raises:
+        Exception: raise Exception if data_type is not PRES, PSAL or TEMP
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values
+    """
 
     i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
     sal_arr = argo_data["PSAL_ADJUSTED"][i]
@@ -276,7 +394,17 @@ def flag_TS_data(argo_data, profile_num):
        
     return argo_data
 
-def data_snapshot_graph(argo_data, profile_num, first_time_run_module = None):
+def data_snapshot_graph(argo_data, profile_num):
+    """
+    Pops out graphs to give user quick look at a profile.
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+        profile_num (int): profile number to look at
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values
+    """
 
     i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
     sal_arr = argo_data["PSAL_ADJUSTED"][i]
@@ -305,28 +433,40 @@ def data_snapshot_graph(argo_data, profile_num, first_time_run_module = None):
     axs[1, 1].text(0.5, 0.7, f'Data Snapshot of Profile: {profile_num}', fontsize=12, ha='center', va='center')
     axs[1, 1].text(0.5, 0.5, f'Datetime of Profile: {timestamp.date()} {timestamp.strftime('%H:%M:%S')}', fontsize=12, ha='center', va='center')
     axs[1, 1].text(0.5, 0.3, f'Lat: {lat:.2f} Lon: {lon:.2f}', fontsize=12, ha='center', va='center')
-    if first_time_run_module:
-        axs[1, 1].text(0.5, 0.1, f'Flag QC-point feature DISABLED for first time run', fontsize=12, ha='center', va='center')
-    else:
-        axs[1, 1].text(0.5, 0.1, f'Flag QC-point feature enabled for TEMP + PSAL graphs', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.1, f'Flag QC-point feature enabled for TEMP + PSAL graphs', fontsize=12, ha='center', va='center')
     axs[1, 1].axis('off')
+    
+    axs[1,0].grid(True)
 
     # Adjust layout to prevent overlap
     plt.tight_layout()
     plt.show()
     
-    if not first_time_run_module:
-        for j in np.arange(0, len(selected_points_temp)):
-            index = selected_points_temp[j]
-            argo_data[f"TEMP_ADJUSTED_QC"][i][j] = index
-        for j in np.arange(0, len(selected_points_psal)):
-            index = selected_points_psal[j]
-            argo_data[f"PSAL_ADJUSTED_QC"][i][j] = index
-        print("Finished setting TEMP_QC and PSAL_QC")
+    for j in np.arange(0, len(selected_points_temp)):
+        index = selected_points_temp[j]
+        argo_data[f"TEMP_ADJUSTED_QC"][i][j] = index
+    for j in np.arange(0, len(selected_points_psal)):
+        index = selected_points_psal[j]
+        argo_data[f"PSAL_ADJUSTED_QC"][i][j] = index
+    print("Finished setting TEMP_ADJUSTED_QC and PSAL_ADJUSTED_QC")
         
     return argo_data
 
 def graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection):
+    """
+    Pops out graph of ALL pressures v data_type
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+        data_type (str): PSAL or TEMP
+        use_adjusted (bool): True to use {PARAM}_ADJUSTED arrs, otherwise uses {PARAM} arrs
+        float_num (str): Float number
+        qc_arr_selection (list, int): list of ints to filter QC arrs 
+            ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
+
+    Returns:
+        Numpy arr of ints: user clicked profile numbers to look at in more detail
+    """
 
     assert data_type == "PSAL" or data_type == "TEMP"
    
@@ -351,7 +491,18 @@ def graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_s
     return selected_profiles
 
 def graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection):
+    """
+    Pops out deep section graph of data_type.
 
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+        data_type (str): PSAL or TEMP
+        use_adjusted (bool): True to use {PARAM}_ADJUSTED arrs, otherwise uses {PARAM} arrs
+        float_num (str): Float number
+        qc_arr_selection (list, int): list of ints to filter QC arrs 
+            ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
+
+    """
     assert data_type == "PSAL" or data_type == "TEMP"
 
     pres = argo_data["PRES_ADJUSTED"]
@@ -374,6 +525,19 @@ def graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc
     deep_section_var_all(pres, argo_data["JULDs"], var, float_num, data_type)
 
 def graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection):
+    """
+    Pops out TS graph for all data. 
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+        use_adjusted (bool): True to use {PARAM}_ADJUSTED arrs, otherwise uses {PARAM} arrs
+        float_num (str): Float number
+        qc_arr_selection (list, int): list of ints to filter QC arrs 
+            ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
+
+    Returns:
+        Numpy arr of ints: user clicked profile numbers to look at in more detail
+    """
 
     pres = argo_data["PRES_ADJUSTED"]
     qc_arr_pres = argo_data["PRES_ADJUSTED_QC"]
@@ -403,23 +567,32 @@ def graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection):
     return selected_profiles
    
 def first_time_run(nc_filepath, dest_filepath, float_num):
+    """
+    First module to run when doing delayed mode processing. Please see functions and
+    associated comments for complete list of all checks done to data.
+
+    Args:
+        nc_filepath (str): filepath to netcdf files
+        dest_filepath (str): filepath to save netcdf files to after processing
+        float_num (str): float number
+    """
 
     # Get dir of generated NETCDF files
     argo_data = read_intermediate_nc_file(nc_filepath)
-    
+
     # CHECK 0: verify vals in [VAR]_QC arrs
     # NOTE:
     #  refer to argo_quality_control_manual: p.22
     #  be careful about flagging points as this method changes PAREM_QC arr as well as ADJUSTED_QC
     #  only flag points as bad if they are obviously/ near 100% bad??
-    argo_data = verify_autoset_qc_flags(argo_data)
- 
-    # CHECK 1: Interpolate missing lat/lons and set QC flags
+    # argo_data = verify_autoset_qc_flags(argo_data)
+    
+    # CHECK 1: fill-in times and set QC flag to 8
+    argo_data = juld_check(argo_data)
+    
+    # CHECK 2: Interpolate missing lat/lons and set QC flags
     # NOTE: passing in JULDs bc if lat/lon is missing -> JULD_LOCATION is missing
     argo_data = lat_lon_check(argo_data)
-
-    # CHECK 2: fill-in times and set QC flag to 8
-    argo_data = juld_check(argo_data)
 
     # CHECK 3: Set QC flags where counts are too high/low
     argo_data = count_check(argo_data)
@@ -431,6 +604,15 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
     make_intermediate_nc_file(argo_data, dest_filepath, float_num)  
 
 def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
+    """
+    Function to look at profile in more detail and flag bad points.
+
+    Args:
+        nc_filepath (str): filepath to netcdf files
+        dest_filepath (str): filepath to save netcdf files to after processing
+        float_num (str): float number
+        profile_num (int): profile number to look at
+    """
     
     # Get dir of generated NETCDF files
     argo_data = read_intermediate_nc_file(nc_filepath)
@@ -444,17 +626,29 @@ def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
 
     # Get rid of range of data
     # argo_data = flag_range_data(argo_data, profile_num, "PRES")
-    argo_data = flag_range_data(argo_data, profile_num, "PSAL")
-    argo_data = flag_range_data(argo_data, profile_num, "TEMP")
+    # argo_data = flag_range_data(argo_data, profile_num, "PSAL")
+    # argo_data = flag_range_data(argo_data, profile_num, "TEMP")
 
     # TS diagram
-    argo_data = flag_TS_data(argo_data, profile_num)
+    # argo_data = flag_TS_data(argo_data, profile_num)
     
     # Write results back to NETCDF file
-    make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
+    # make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
 
 def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted):
+    """
+    Pops out graphs to look at complete dataset. 
 
+    Args:
+        nc_filepath (str): filepath to netcdf files
+        dest_filepath (str): filepath to save netcdf files to after processing
+        float_num (str): Float number
+        qc_arr_selection (list, int): list of ints to filter QC arrs 
+            ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
+        data_type (str): PSAL or TEMP
+        use_adjusted (bool): True to use {PARAM}_ADJUSTED arrs, otherwise uses {PARAM} arrs
+        
+    """
     # Get dir of generated NETCDF files
     argo_data = read_intermediate_nc_file(nc_filepath)
     # get rid of all nan slices
@@ -477,80 +671,50 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
     if selected_profiles is not None:
         for prof_num in selected_profiles:
             argo_data = data_snapshot_graph(argo_data, prof_num)
+            argo_data = flag_range_data(argo_data, prof_num, "PSAL")
+            argo_data = flag_range_data(argo_data, prof_num, "TEMP")
             make_intermediate_nc_file(argo_data, dest_filepath, float_num, prof_num)  
+
+def RBR_argo3_2K_procedures(nc_filepath, dest_filepath):
+
+    argo_data = read_intermediate_nc_file(nc_filepath)
+    
+    # Step 1: Re-compute salinity due to compressibility effect
+    # Compute original conductivty Co
+    #Co = gsw.C_from_SP(argo_data["PSAL_ADJUSTED"], argo_data["TEMP_ADJUSTED"], argo_data["PRES_ADJUSTED"])
+    #PSAL_ADJUSTED_Padj = gsw.SP_from_C(Co, argo_data["TEMP_ADJUSTED"], argo_data["PRES_ADJUSTED"])
+
+    # Step 2: Apply thermal inertia correction
+    # calc conductivity from PSAL_ADJUSTED_Padj ^ (skip for now)
+    # Estimate elptime
+
+
 
 
 def main():
 
-    #nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_1"
-    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_1"
+    #nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
+    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_vi_new"
     float_num = "F9186"
-    #dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_1"
-    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_1"
+    #dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
+    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_vi_new"
+    # F9186_after_visual_inspection
+    
     if not os.path.exists(dest_filepath):
         os.mkdir(dest_filepath)
 
     #first_time_run(nc_filepath, dest_filepath, float_num)
-
-    profile_num = 88
-    #manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
+    # 192
+    profile_num = 92
+    # manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
 
     qc_arr_selection = [0, 1, 2] # only want good/ prob good data 
     data_type = "PSAL"                 # either PSAL or TEMP
     use_adjusted = True                
     generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted)
 
+    #RBR_argo3_2K_procedures(nc_filepath, dest_filepath)
+
 if __name__ == '__main__':
  
     main()
-
-    # MASTER PLAN 10/30/2024 - Sweet Zhang
-
-    # READING DATA: CSV_TO_NC.PY MODULE
-    # DONE: make var names more clear
-    # DONE: init data arrs for various QC flags
-    #    TEMP_ADJUSTED          PRES_ADJUSTED          PSAL_ADJUSTED          CNDC_ADJUSTED
-    #    TEMP_ADJUSTED_ERROR    PRES_ADJUSTED_ERROR    PSAL_ADJUSTED_ERROR    CNDC_ADJUSTED_ERROR
-    #    TEMP_ADJUSTED_QC       PRES_ADJUSTED_QC       PSAL_ADJUSTED_QC       CNDC_ADJUSTED_QC
-        # NOTE: maybe add function in future to read PHY files... OR
-        # maybe it's best to read in NETCDF files already on the website for the data?
-        # but anyways, better to do all that here in the beginning - easier to change down the line
-        
-    # make changes to have these two portions read the files generated from CSV_TO_NC
-
-    # DATA ANALYSIS PORTION: composed of graphing modules to allow person to look at the data
-        # separate graphing module (graphs_nc.py) w/ variety of graphing tools
-        # OVERALL TODOs:
-        # --- clean up graphing modules
-        # --- make it more user friendly...
-        # --- incorp use of data flags IF PRESENT
-
-    # DATA PROCESSING PORTION
-        # so far... we have code in this module to:
-        # Get raw CSV data and read in (LGR_CP_PTSCI) measurements: df_lats, df_lons, df_pres, df_temps, df_sals, df_juld, df_prof_nums, df_counts 
-            # DONE: change this to read CSV_TO_NC generated output files
-        # CLEAN UP DATA:
-            # IMPLEMENT AUTO CHECKS:
-                # DONE: Check CP_PTSCI COUNT number. throw away counts that are wayyyy to high
-                    # are these responsible for the weird TS spikes @ the end of the profile?
-                # DONE: Throw away all data that has a PRES of <1m
-        # FIGURE OUT SALINITY DRIFT
-
-    # WRITE FINAL PRODUCT TO NETCDF FILE
-    """
-    SCIENTIFIC_CALIB_EQUATION    # if no adjustments are made, var is filled by filled vals
-                                 # if adjustments are made: PSAL_ADJUSTED = PSAL + CHANGE OF S etc
-    SCIENTIFIC_CALIB_COEFFICIENT # if no adjustments are made, var is filled by filled vals
-                                 # put what change of S is
-    SCIENTIFIC_CALIB_COMMENT     # wording that describes the calibration, ex sensor drift detected etc
-    SCIENTIFIC_CALIB_DATE # date of delayed-mode qc for EACH measurement parem YYYYMMDDHHMMSS
-
-    DATA_MODE # changed to record 'D'
-    DATA_STATE_INDICIATOR # record '2C' or '2C+'???
-    DATE_UPDATE # record date of last update of netcdf file YYYYMMDDHHMMSS
-    # name of single-profile ARGO netcdf file changed from R*.nc to D*.nc
-
-    look in notebook for more data flags + info
-
-    @ end read in value from {VAR_ADJUSTED_QC} -> copy into {VAR_QC}????
-    """

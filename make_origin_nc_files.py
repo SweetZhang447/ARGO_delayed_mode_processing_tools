@@ -15,6 +15,10 @@ def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, co
                         PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED, CNDC_ADJUSTED,
                         latitude, longitude, juld_timestamp, juld_location, dest_filepath, float_num,
                         **kwargs):
+    """
+    Makes a set of intermediate NETCDF files from parsed ARGO data, designed to be fed into "delayed_mode_processing" pipeline.
+    kwargs values initialized as np arr of 0's if not passed in.
+    """
 
     output_filename = os.path.join(dest_filepath, f"{float_num}-{profile_num:03}.nc")
     nc = nc4.Dataset(output_filename, 'w')
@@ -48,6 +52,7 @@ def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, co
     POSITION_QC = kwargs.get("POSITION_QC", np.nan)
     JULD_QC = kwargs.get("JULD_QC", np.nan)
     offset = kwargs.get("pres_offset", None)
+    PTSCI_TIMESTAMPS = kwargs.get("PTSCI_TIMESTAMPS", np.full(pressures.shape, fill_value=0)) 
 
     # Create dimensions - name + length
     length = pressures.size
@@ -86,6 +91,10 @@ def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, co
         offset_var[:] = int(-9999)
     else:
         offset_var[:] = offset
+    
+    ptsci_timestamps_var = nc.createVariable('PTSCI_TIMESTAMPS', 'i8', 'records')
+    ptsci_timestamps_var.long_name = "Format: YYYYMMDDHHMMSS"
+    ptsci_timestamps_var[:] = PTSCI_TIMESTAMPS
 
     counts_var = nc.createVariable('NB_SAMPLE_CTD', 'f4', 'records')
     counts_var[:] = counts
@@ -152,9 +161,27 @@ def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, co
 
     nc.close()
 
-def read_csv_files(csv_filepath, dest_filepath, float_num, broken_float):
+def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
+    """
+    Generates a set of intermediate files from .csv type profile files,
+    and their associated .txt system log files.
+
+    Pressure offset is read from .txt system log files
+    PRES_ADJUSTED = ORG_PRES - OFFSET
+
+    Args:
+        input_filepath (str): local filepath to .csv and .txt file data 
+        dest_filepath (str): local directory filepath to store generated files 
+        float_num (str): the argo internal float number, used to name the files downloaded
+        broken_float (int): 
+            1: indicates broken float, LGR_CP_PTSCI is missing data, so it 
+               reads LGR_PTSCI data from different place
+            0: Appends LGR_CP_PTSCI data as normal 
+    Raises:
+        Exception: if broken_float is either 0/1, raises exception
+    """
     
-    all_files = (p.resolve() for p in Path(csv_filepath).glob("*") if p.name.endswith("system_log.txt") or p.name.endswith("science_log.csv"))
+    all_files = (p.resolve() for p in Path(input_filepath).glob("*") if p.name.endswith("system_log.txt") or p.name.endswith("science_log.csv"))
     
     files_dictionary = {}
     for file_path in all_files:
@@ -173,7 +200,7 @@ def read_csv_files(csv_filepath, dest_filepath, float_num, broken_float):
         if "science_log" in file_paths and "system_log" in file_paths:
 
             # Initialize variables
-            pressures, temps, sals, cndc, temp_cndc, counts = [], [], [], [], [], []
+            pressures, temps, sals, cndc, temp_cndc, counts, PTSCI_timestamps = [], [], [], [], [], [], []
             latitude, longitude, juld_location, juld_timestamp = None, None, None, None
     
             # Read the science log file
@@ -211,6 +238,7 @@ def read_csv_files(csv_filepath, dest_filepath, float_num, broken_float):
                     
             # Process data from science file
             for row in PTSCIinfo:
+                PTSCI_timestamps.append(int(row[1].replace('T', '')))
                 pressures.append(float(row[2]))
                 temps.append(float(row[3]))
                 sals.append(float(row[4]))
@@ -250,6 +278,16 @@ def read_csv_files(csv_filepath, dest_filepath, float_num, broken_float):
                         line = line.split(' ')
                         offset = line[-2]
 
+            # Reverse data to be consistent with ARGO NETCDF files
+            pressures.reverse()
+            temps.reverse()
+            sals.reverse()
+            cndc.reverse()
+            temp_cndc.reverse()
+            counts.reverse()
+            PTSCI_timestamps.reverse()
+
+            PTSCI_timestamps = np.asarray(PTSCI_timestamps)
             TEMP_ADJUSTED =  np.asarray(copy.deepcopy(temps))
             PSAL_ADJUSTED =  np.asarray(copy.deepcopy(sals))
             cndc = np.asarray(cndc)/10
@@ -263,18 +301,27 @@ def read_csv_files(csv_filepath, dest_filepath, float_num, broken_float):
                 make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, counts,
                                     PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED, CNDC_ADJUSTED,
                                     latitude, longitude, juld_timestamp, juld_location, dest_filepath, float_num,
-                                    pres_offset=offset)
+                                    pres_offset=offset, PTSCI_TIMESTAMPS=PTSCI_timestamps)
             else:
                 PRES_ADJUSTED =  np.asarray(copy.deepcopy(pressures)) - float(offset)
                 make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, counts,
                                     PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED, CNDC_ADJUSTED,
                                     latitude, longitude, juld_timestamp, juld_location, dest_filepath, float_num,
-                                    pres_offset=offset)
+                                    pres_offset=offset, PTSCI_TIMESTAMPS=PTSCI_timestamps)
 
         else:
            print(f"Skipping profile {profile_num}: Missing required files.")
 
 def read_argo_nc_files(nc_filepath, dest_filepath, float_num):
+    """
+    Generates a set of intermediate files from original real-time ARGO files,
+    designed to be fed into delayed_mode_processing pipeline
+
+    Args:
+        nc_filepath (str): local filepath to a set of ARGO profile files 
+        dest_filepath (str): local directory filepath to store generated files 
+        float_num (str): the argo internal float number, used to name the files downloaded
+    """
     
     nc_files = glob.glob(os.path.join(nc_filepath, "*.nc"))
    
@@ -374,6 +421,14 @@ def read_argo_nc_files(nc_filepath, dest_filepath, float_num):
                             NB_SAMPLE_CTD_QC=NB_SAMPLE_CTD_QC)
 
 def download_files(url, download_dir, float_num):
+    """
+    Downloads a set of float profile files from ARGO, uses multithreading for faster speed
+
+    Args:
+        url (str): https link to float profiles directory 
+        download_dir (str): local directory to download the files into
+        float_num (str): the argo internal float number, used to name the files downloaded
+    """
 
     # Get links
     res = requests.get(url)
@@ -400,25 +455,33 @@ def download_files(url, download_dir, float_num):
 
     print("Finished Downloading Profiles")
 
-def download_file(dload_url, download_dir, curr_filename):
+def download_file(dload_url, download_dir, float_num):
+    """ 
+    Downloads a set of float profile files from ARGO
+
+    Args:
+        dload_url (str): https link to float profiles directory 
+        download_dir (str): local directory to download the files into
+        float_num (str): the argo internal float number, used to name the files downloaded
+    """
 
     response = requests.get(dload_url, timeout=5)
     if response.status_code == 200:
-        with open(os.path.join(download_dir, curr_filename), "wb") as dload_file:
+        with open(os.path.join(download_dir, float_num), "wb") as dload_file:
             dload_file.write(response.content)
     else:
         print("Failed to download file")
 
 def main(download_ARGO_NETCDF_files, read_ARGO_NETCDF_files, read_RAW_CSV_files):
 
-    float_num= "F9186"
+    float_num= "F10051"
     # F10051_bad_data_30_69        F10051_all_data
     # input_dir = "C:\\Users\\szswe\\Desktop\\NOAA_pipeline\\F10051_data\\F10051_bad_data_30_69"
     # dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F10051_0"
-    # input_dir = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
-    # dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_0"
-    input_dir = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F9186_raw_csv"
-    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_0"
+    input_dir = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
+    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_0"
+    #input_dir = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F9186_raw_csv"
+    #dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_0"
 
     if download_ARGO_NETCDF_files == 1:
         dload_url = "https://data-argo.ifremer.fr/dac/aoml/1902655/profiles/"
@@ -435,7 +498,7 @@ def main(download_ARGO_NETCDF_files, read_ARGO_NETCDF_files, read_RAW_CSV_files)
 if __name__ == '__main__':
 
     download_ARGO_NETCDF_files = 0
-    read_ARGO_NETCDF_files = 0
-    read_RAW_CSV_files = 1
+    read_ARGO_NETCDF_files = 1
+    read_RAW_CSV_files = 0
 
     main(download_ARGO_NETCDF_files, read_ARGO_NETCDF_files, read_RAW_CSV_files)
