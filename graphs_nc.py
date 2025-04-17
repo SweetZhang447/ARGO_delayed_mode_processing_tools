@@ -248,19 +248,20 @@ def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=N
 
     fig.canvas.mpl_connect('button_press_event', on_click)
     
-    # Custom legend elements
-    custom_legend = [
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),    # Both bad
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),   # Salinity bad
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', markersize=10), # Temperature bad
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10)   # Good data
-    ]
-    # Add legend to the plot
-    ax.legend(
-        custom_legend,
-        ["Bad", "Probably Bad", "Probably Good", "Good"],  # Custom labels
-        loc='lower left', title="Data Quality"
-    )
+    if print_multiplot == False:
+        # Custom legend elements
+        custom_legend = [
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', markersize=10),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10)
+        ]
+        # Add legend to the plot
+        ax.legend(
+            custom_legend,
+            ["Bad", "Probably Bad", "Probably Good", "Good"],  # Custom labels
+            loc='lower left', title="Data Quality"
+        )
 
     if data_type == "PRES":
         # Add labels and title
@@ -294,24 +295,25 @@ def merge_ranges(ranges):
         else:
             # Merge the current range with the last range in merged
             merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-    
     return merged
 
 def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
-
-    # Separate points based on QC flags
-    bad_mask = (qc_arr == 4) | (qc_arr == 3)
-
-    # Array to store selected points
-    selected_points = [] 
 
     # Create the figure and axes
     fig, ax = plt.subplots()
 
     # init colors in arr
-    colors = ['green' for _ in range(len(PRES))]
-    for i in np.where(bad_mask == True)[0]:
-        colors[i] = 'red'
+    colors = []
+    selected_points = [] 
+    for qc in qc_arr:
+        if qc == 4:                 # bad
+            colors.append('red')
+        elif qc == 3:               # prob bad
+            colors.append('orange')
+        elif qc == 2:               # prob good
+            colors.append('aqua')
+        else:                       # qc == 1, val is good
+            colors.append('green')
     # copy org color arr
     org_colors = copy.deepcopy(colors)
   
@@ -342,10 +344,6 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
             if cont:
                 clicked_idx = ind["ind"][0]  
                 complete_incomplete_pair = False
-                if data_type == "PRES":
-                    var_val = PRES[clicked_idx]
-                else: 
-                    var_val = var[clicked_idx]
 
                 for i, (p1, p2) in enumerate(selected_points):
                     # Check if clicked point is in range of a pair
@@ -354,7 +352,7 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
                             # If it is, remove the entire range of color and remove the pair
                             selected_points.pop(i)
                             for val_in_range in np.arange(p1, p2 + 1):
-                                # set color back to orginal color 
+                                # set color back to original color 
                                 subset_colors[val_in_range] = org_colors[val_in_range]
                             # Set color and update 
                             scatter.set_color(subset_colors)
@@ -365,33 +363,38 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
                 # If here, then clicked point is not in range of pair
                 # Add the clicked point to a new or incomplete pair
                 if not selected_points or selected_points[-1][1] is not None:
-                    # Check if org color is red
-                    if subset_colors[clicked_idx] == 'red':
-                        # If it is mark it as green              
+                    # Change color of clicked element 
+                    if org_colors[clicked_idx] == 'red':
+                        subset_colors[clicked_idx] = 'orange'
+                    elif org_colors[clicked_idx] == 'orange':
+                        subset_colors[clicked_idx] = 'aqua'
+                    elif org_colors[clicked_idx] == 'aqua':
                         subset_colors[clicked_idx] = 'green'
-                        print(f"(index, val): ({clicked_idx}, {var_val}) marked as good")
                     else:
-                        # Start a new pair
-                        selected_points.append((clicked_idx, None))
-                        # Change color of that point 
                         subset_colors[clicked_idx] = 'red'
-                        print(f"Starting new pair")
+                    selected_points.append((clicked_idx, None))
+                    print(f"Starting new pair")
                 else:
                     # Complete the last incomplete pair
                     # Check to see if it is the same
                     if clicked_idx == selected_points[-1][0]:
-                        # remove that val
-                        selected_points.pop(-1)
-                        # change color to org color
-                        org_color = subset_colors[clicked_idx]
-                        if org_color == 'red':
+                        # If it is the same, cycle color options
+                        if subset_colors[clicked_idx] == 'red':
+                            subset_colors[clicked_idx] = 'orange'
+                        elif subset_colors[clicked_idx] == 'orange':
+                            subset_colors[clicked_idx] = 'aqua'
+                        elif subset_colors[clicked_idx] == 'aqua':
                             subset_colors[clicked_idx] = 'green'
-                        else:
+                        elif subset_colors[clicked_idx] == 'green':
                             subset_colors[clicked_idx] = 'red'
+                        # Delete point when color has cycled to orginal color
+                        if org_colors[clicked_idx] == subset_colors[clicked_idx]:
+                            # remove that val
+                            selected_points.pop(-1)
+                            print(f"Point deleted")
                         # Update the color of the clicked point
                         scatter.set_color(subset_colors)
                         fig.canvas.draw_idle()
-                        print(f"Point deleted")
                         return
                     # Check to see if clicked val is before or after the last incomplete pair val
                     # If it happened after
@@ -399,20 +402,20 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
                         complete_incomplete_pair = True
                         # add the point and color as normal
                         selected_points[-1] = (selected_points[-1][0], clicked_idx)
-                        # Change color to red 
+                        # Change color
                         for val_in_range in np.arange(selected_points[-1][0], selected_points[-1][1] + 1):
-                            subset_colors[val_in_range] = 'red'
+                            subset_colors[val_in_range] = subset_colors[selected_points[-1][0]]
                         print(f"Completing pair: {selected_points[-1]}")
                     else:
                         complete_incomplete_pair = True
                         # switch the pair around and color as normal
                         selected_points[-1] = (clicked_idx, selected_points[-1][0])
-                        # Change color to red 
+                        # Change color
                         for val_in_range in np.arange(selected_points[-1][0], selected_points[-1][1] + 1):
-                            subset_colors[val_in_range] = 'red'
+                            subset_colors[val_in_range] = subset_colors[selected_points[-1][1]]
                         print(f"Completing pair: {selected_points[-1]}")
 
-                # check to see if we can merge any ranges 
+                # # check to see if we can merge any ranges 
                 if complete_incomplete_pair == True:
                     selected_points_copy = copy.deepcopy(selected_points) # avoid modifying in place
                     selected_points = merge_ranges(selected_points_copy)
@@ -422,6 +425,20 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
                 fig.canvas.draw_idle()
 
     fig.canvas.mpl_connect('button_press_event', on_click)
+
+    # Custom legend elements
+    custom_legend = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10), 
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', markersize=10),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10)   
+    ]
+    # Add legend to the plot
+    ax.legend(
+        custom_legend,
+        ["Bad", "Probably Bad", "Probably Good", "Good"],  # Custom labels
+        loc='lower left', title="Data Quality"
+    )
 
     # Add labels and title
     if data_type == "PRES":
@@ -435,12 +452,11 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
 
     plt.show()
 
-    return selected_points
+    return colors
 
 def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adjusted_qc, psal_adjusted_qc, ax = None):
-    
-    print_multiplot = False
 
+    print_multiplot = False
     sal_copy = copy.deepcopy(sal)
     temp_copy = copy.deepcopy(temp)
     
@@ -540,6 +556,7 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
                 # Update the color of the clicked point
                 scatter.set_color(graph_colors)
                 fig.canvas.draw_idle()
+    
     if print_multiplot == False:
         fig.canvas.mpl_connect('button_press_event', on_click)
 
@@ -996,12 +1013,12 @@ def compute_cellTM():
         #pressure[count_mask] = np.nan
         #temp_cndc[count_mask] = np.nan
         # 2) Get rid of bad points where TEMP, PRES, TEMP_CNDC QC arr's == (3/4)
-        temp_mask = np.where(((argo_data["TEMP_ADJUSTED_QC"][i, :nan_index] == 3) | (argo_data["TEMP_ADJUSTED_QC"][i, :nan_index] == 4)))[0]
-        pres_mask = np.where(((argo_data["PRES_ADJUSTED_QC"][i, :nan_index] == 3) | (argo_data["PRES_ADJUSTED_QC"][i, :nan_index] == 4)))[0]
-        temp_cndc_mask = np.where(((argo_data["TEMP_CNDC_QC"][i, :nan_index] == 3) | (argo_data["TEMP_CNDC_QC"][i, :nan_index] == 4)))[0]
-        temperature[temp_mask] = np.nan
-        pressure[pres_mask] = np.nan
-        temp_cndc[temp_cndc_mask] = np.nan
+        #temp_mask = np.where(((argo_data["TEMP_ADJUSTED_QC"][i, :nan_index] == 3) | (argo_data["TEMP_ADJUSTED_QC"][i, :nan_index] == 4)))[0]
+        # pres_mask = np.where(((argo_data["PRES_ADJUSTED_QC"][i, :nan_index] == 3) | (argo_data["PRES_ADJUSTED_QC"][i, :nan_index] == 4)))[0]
+        # temp_cndc_mask = np.where(((argo_data["TEMP_CNDC_QC"][i, :nan_index] == 3) | (argo_data["TEMP_CNDC_QC"][i, :nan_index] == 4)))[0]
+        #temperature[temp_mask] = np.nan
+        # pressure[pres_mask] = np.nan
+        # temp_cndc[temp_cndc_mask] = np.nan
 
         a = RBRargo3_celltm.RBRargo3_celltm(temperature, pressure, temp_cndc, elptime)
         cell_tms.append(a)
@@ -1025,20 +1042,45 @@ def compute_cellTM():
 
 def make_der_graph(argo_data, PSAL_ADJUSTED_Padj_CTM):
 
-    fig, (ax1, ax2) = plt.subplots(1, 2)
-    fig.suptitle('Thermal Comparison Plots')
-
     for i in np.arange(len(argo_data["PROFILE_NUMS"])):
-        profile_num = argo_data["PROFILE_NUMS"][i]
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2)
+        fig.suptitle(f'Profile: {argo_data["PROFILE_NUMS"][i]}')
+
         pres = argo_data["PRES_ADJUSTED"][i]
         psal_old = argo_data["PSAL_ADJUSTED"][i]
         psal_new = PSAL_ADJUSTED_Padj_CTM[i]
-        ax1.scatter(psal_old, pres)
-        ax2.plot(psal_new, pres)
 
+        # Plot salinity on left-side axis
+        #ax1.scatter(psal_old, pres, s=1, c="red")
+        ax1.plot(psal_old, pres, c="red")
+        #ax1.scatter(psal_new, pres, s=1, c="green")
+        ax1.plot(psal_new, pres, c="green")
+        # Plot configs
+        ax1.grid(True)
+        ax1.yaxis.set_inverted(True)
+        ax1.set_title("Adjusted v Original Salinity")
+        ax1.set_xlabel("Salinity")
+        ax1.set_ylabel("Pressure")
+        ax1.legend(
+            [Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=7),
+             Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=7)],
+            ["Org Salinity", "Adjusted Salinity"], bbox_to_anchor=(0.5, -0.07), ncol = 2, loc='upper center'
+        )
+
+        # Plot derivative of temp/ depth on right side
+        dT_dz = np.diff(argo_data["TEMP_ADJUSTED"][i]) / np.diff(pres) # divide the diff of adjacent elements of arrs
+        pressure_mid = (pres[:-1] + pres[1:]) / 2 # Find the midpoint of pressures
+        ax2.plot(dT_dz, pressure_mid)
+        # Plot configs
+        ax2.yaxis.set_inverted(True)
+        ax2.set_title("dT/dz Graph")
+        ax2.set_xlabel("dT/dz")
+        ax2.set_ylabel("Pressure Midpoints")
+        ax2.grid(True)
+        ax2.axvline(0, color='black', linestyle='--', linewidth=1) # reference line
 
         plt.show()
-        raise Exception
 
 def main():
 

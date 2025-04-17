@@ -472,7 +472,12 @@ def download_file(dload_url, download_dir, float_num):
     else:
         print("Failed to download file")
 
-def main(download_ARGO_NETCDF_files, read_ARGO_NETCDF_files, read_RAW_CSV_files):
+def main():
+
+    download_ARGO_NETCDF_files = 0
+    dload_url = "https://data-argo.ifremer.fr/dac/aoml/1902655/profiles/"
+    read_ARGO_NETCDF_files = 1
+    read_RAW_CSV_files = 0
 
     float_num= "F10051"
     # F10051_bad_data_30_69        F10051_all_data
@@ -484,7 +489,6 @@ def main(download_ARGO_NETCDF_files, read_ARGO_NETCDF_files, read_RAW_CSV_files)
     #dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_0"
 
     if download_ARGO_NETCDF_files == 1:
-        dload_url = "https://data-argo.ifremer.fr/dac/aoml/1902655/profiles/"
         argo_internal_float_num = "1902655"
         download_files(dload_url, input_dir, argo_internal_float_num)
 
@@ -497,8 +501,4 @@ def main(download_ARGO_NETCDF_files, read_ARGO_NETCDF_files, read_RAW_CSV_files)
     
 if __name__ == '__main__':
 
-    download_ARGO_NETCDF_files = 0
-    read_ARGO_NETCDF_files = 1
-    read_RAW_CSV_files = 0
-
-    main(download_ARGO_NETCDF_files, read_ARGO_NETCDF_files, read_RAW_CSV_files)
+    main()

@@ -12,6 +12,7 @@ from scipy.interpolate import interp1d
 from graphs_nc import TS_graph_single_dataset_all_profile, deep_section_var_all, flag_TS_data_graphs, flag_range_data_graphs, flag_point_data_graphs, pres_v_var_all
 from tools import from_julian_day, to_julian_day, read_intermediate_nc_file, make_intermediate_nc_file, del_all_nan_slices
 import gsw 
+from matplotlib.lines import Line2D
 
 def interp_missing_lat_lons(lats, lons, dates):
     """
@@ -299,7 +300,7 @@ def flag_data_points(argo_data, profile_num, data_type):
 
     return argo_data
 
-def flag_range_data(argo_data, profile_num, data_type):
+def flag_range_data(argo_data, profile_num, data_type, data_flag = None):
     """
     Flag data ranges in {PARAM}_ADJUSTED_QC arrays. Pops out graph pressure v data_type for users
     to look at data and click through to change QC arr. 
@@ -308,6 +309,7 @@ def flag_range_data(argo_data, profile_num, data_type):
         argo_data (dict): dictionary of ARGO delayed mode profile values
         profile_num (int): profile number to look at
         data_type (str): determine which data arr: PRES, PSAL, or TEMP to look at 
+        data_flag (optional, int): if specified, sets QC arrays to data_flag, if not, default sets to 4
 
     Raises:
         Exception: raise Exception if data_type is not PRES, PSAL or TEMP
@@ -322,23 +324,31 @@ def flag_range_data(argo_data, profile_num, data_type):
 
     if data_type == "PRES":
         qc_arr = argo_data["PRES_ADJUSTED_QC"][i]
-        selected_points = flag_range_data_graphs(None, pres_arr, "PRES", qc_arr, profile_num, date)
+        selected_colors = flag_range_data_graphs(None, pres_arr, "PRES", qc_arr, profile_num, date)
 
     elif (data_type == "PSAL") or (data_type == "TEMP"):
         var_arr = argo_data[f"{data_type}_ADJUSTED"][i]
         qc_arr = argo_data[f"{data_type}_ADJUSTED_QC"][i]
-        selected_points = flag_range_data_graphs(var_arr, pres_arr, data_type, qc_arr, profile_num, date)
+        selected_colors = flag_range_data_graphs(var_arr, pres_arr, data_type, qc_arr, profile_num, date)
     else:
         raise Exception("Invalid data_type")
     
-    for index, (p1, p2) in enumerate(selected_points):
-        if p2 is not None:
-            for j in np.arange(p1, p2 + 1):
-                argo_data[f"{data_type}_ADJUSTED_QC"][i][j] = 4
-            print(f"Setting {data_type}_ADJUSTED_QC range {p1} - {p2} to BAD VAL")
-        else:
-            argo_data[f"{data_type}_ADJUSTED_QC"][i][p1] = 4
-            print(f"Setting {data_type}_ADJUSTED_QC[{i}][{p1}] to BAD VAL")
+    # for index, (p1, p2) in enumerate(selected_points):
+    #     if p2 is not None:
+    #         for j in np.arange(p1, p2 + 1):
+    #             argo_data[f"{data_type}_ADJUSTED_QC"][i][j] = data_flag
+    #     else:
+    #         argo_data[f"{data_type}_ADJUSTED_QC"][i][p1] = data_flag
+    for j in np.arange(len(selected_colors)):
+        color = selected_colors[j]
+        if color == 'red':
+            argo_data[f"{data_type}_ADJUSTED_QC"][i][j] = 4
+        elif color == 'orange':
+            argo_data[f"{data_type}_ADJUSTED_QC"][i][j] = 3
+        elif color == 'aqua':
+            argo_data[f"{data_type}_ADJUSTED_QC"][i][j] = 2
+        elif color == 'green':
+            argo_data[f"{data_type}_ADJUSTED_QC"][i][j] = 1
 
     return argo_data
 
@@ -431,13 +441,31 @@ def data_snapshot_graph(argo_data, profile_num):
     # Fill bottom-right subplot with text
     timestamp = from_julian_day(float(juld))
     axs[1, 1].text(0.5, 0.7, f'Data Snapshot of Profile: {profile_num}', fontsize=12, ha='center', va='center')
-    axs[1, 1].text(0.5, 0.5, f'Datetime of Profile: {timestamp.date()} {timestamp.strftime('%H:%M:%S')}', fontsize=12, ha='center', va='center')
-    axs[1, 1].text(0.5, 0.3, f'Lat: {lat:.2f} Lon: {lon:.2f}', fontsize=12, ha='center', va='center')
-    axs[1, 1].text(0.5, 0.1, f'Flag QC-point feature enabled for TEMP + PSAL graphs', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.6, f'Datetime of Profile: {timestamp.date()} {timestamp.strftime('%H:%M:%S')}', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.5, f'Lat: {lat:.2f} Lon: {lon:.2f}', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.4, f'Flag QC-point feature enabled for TEMP + PSAL graphs', fontsize=12, ha='center', va='center')
     axs[1, 1].axis('off')
-    
     axs[1,0].grid(True)
 
+    # Add legend elements
+    custom_legend = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),    # Both bad
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),   # Salinity bad
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', markersize=10), # Temperature bad
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10)   # Good data
+    ]
+
+    # Add legend with bbox_to_anchor to place it nicely at the bottom
+    axs[1, 1].legend(
+        custom_legend,
+        ["Bad", "Probably Bad", "Probably Good", "Good"],
+        loc='lower center',
+        bbox_to_anchor=(0.5, 0.1),
+        ncol=2,
+        title="QC Data Quality Flags",
+        frameon=False
+    )
+    
     # Adjust layout to prevent overlap
     plt.tight_layout()
     plt.show()
@@ -583,9 +611,7 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
     # CHECK 0: verify vals in [VAR]_QC arrs
     # NOTE:
     #  refer to argo_quality_control_manual: p.22
-    #  be careful about flagging points as this method changes PAREM_QC arr as well as ADJUSTED_QC
-    #  only flag points as bad if they are obviously/ near 100% bad??
-    # argo_data = verify_autoset_qc_flags(argo_data)
+    argo_data = verify_autoset_qc_flags(argo_data)
     
     # CHECK 1: fill-in times and set QC flag to 8
     argo_data = juld_check(argo_data)
@@ -626,14 +652,14 @@ def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
 
     # Get rid of range of data
     # argo_data = flag_range_data(argo_data, profile_num, "PRES")
-    # argo_data = flag_range_data(argo_data, profile_num, "PSAL")
-    # argo_data = flag_range_data(argo_data, profile_num, "TEMP")
+    argo_data = flag_range_data(argo_data, profile_num, "PSAL")
+    argo_data = flag_range_data(argo_data, profile_num, "TEMP")
 
     # TS diagram
-    # argo_data = flag_TS_data(argo_data, profile_num)
+    argo_data = flag_TS_data(argo_data, profile_num)
     
     # Write results back to NETCDF file
-    # make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
+    make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
 
 def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted):
     """
@@ -675,45 +701,30 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
             argo_data = flag_range_data(argo_data, prof_num, "TEMP")
             make_intermediate_nc_file(argo_data, dest_filepath, float_num, prof_num)  
 
-def RBR_argo3_2K_procedures(nc_filepath, dest_filepath):
-
-    argo_data = read_intermediate_nc_file(nc_filepath)
-    
-    # Step 1: Re-compute salinity due to compressibility effect
-    # Compute original conductivty Co
-    #Co = gsw.C_from_SP(argo_data["PSAL_ADJUSTED"], argo_data["TEMP_ADJUSTED"], argo_data["PRES_ADJUSTED"])
-    #PSAL_ADJUSTED_Padj = gsw.SP_from_C(Co, argo_data["TEMP_ADJUSTED"], argo_data["PRES_ADJUSTED"])
-
-    # Step 2: Apply thermal inertia correction
-    # calc conductivity from PSAL_ADJUSTED_Padj ^ (skip for now)
-    # Estimate elptime
-
-
-
 
 def main():
 
     #nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
-    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_vi_new"
+    #F9186_after_vi_old    F9186_after_visual_inspection_new
+    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_visual_inspection_new"
+
     float_num = "F9186"
     #dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
-    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_vi_new"
-    # F9186_after_visual_inspection
+    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_visual_inspection_new"
     
     if not os.path.exists(dest_filepath):
         os.mkdir(dest_filepath)
 
     #first_time_run(nc_filepath, dest_filepath, float_num)
-    # 192
-    profile_num = 92
-    # manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
+
+    profile_num = 285
+    manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
 
     qc_arr_selection = [0, 1, 2] # only want good/ prob good data 
-    data_type = "PSAL"                 # either PSAL or TEMP
+    data_type = "TEMP"                 # either PSAL or TEMP
     use_adjusted = True                
-    generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted)
+    #generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted)
 
-    #RBR_argo3_2K_procedures(nc_filepath, dest_filepath)
 
 if __name__ == '__main__':
  

@@ -489,7 +489,7 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
         param_pad = np.pad(list(param), (0, 16 - len(param)), mode='constant', constant_values=' ')
         PARAMETER_temp.append(param_pad)
     PARAMETER_temp = np.array(PARAMETER_temp, dtype='S1')   
-    PARAMETER_val = np.full((3, 6, 16), ' ', dtype='S1')
+    PARAMETER_val = np.full((final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"].shape[0], len(final_nc_data_prof["PARAMETER"].split(', ')), 16), ' ', dtype='S1')
     PARAMETER_val[0, :, :] = PARAMETER_temp
     PARAMETER[:] = PARAMETER_val
 
@@ -769,7 +769,9 @@ def format_argo_data(argo_data):
 
     # For all QC arr's flip 0's to 1's
     argo_data["JULD_QC"][argo_data["JULD_QC"] == 0] = 1
+    argo_data["JULD_QC"][np.isnan(argo_data["JULD_QC"])] = 1
     argo_data["POSITION_QC"][argo_data["POSITION_QC"] == 0] = 1
+    argo_data["POSITION_QC"][np.isnan(argo_data["POSITION_QC"])] = 1
     argo_data["PRES_ADJUSTED_QC"][argo_data["PRES_ADJUSTED_QC"] == 0] = 1
     argo_data["PSAL_ADJUSTED_QC"][argo_data["PSAL_ADJUSTED_QC"] == 0] = 1
     argo_data["TEMP_ADJUSTED_QC"][argo_data["TEMP_ADJUSTED_QC"] == 0] = 1
@@ -796,28 +798,65 @@ def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
     """
     
     # PAREMS that are always set
-    final_nc_data_prof["HISTORY_DATE"] = np.vstack([final_nc_data_prof["HISTORY_DATE"], np.array(list(str(datetime.now().strftime("%Y%m%d%H%M%S"))))])
-    final_nc_data_prof["HISTORY_INSTITUTION"] = np.vstack([final_nc_data_prof["HISTORY_INSTITUTION"], np.array(list('JP  '))])
-    final_nc_data_prof["HISTORY_STEP"] = np.vstack([final_nc_data_prof["HISTORY_STEP"], np.array(list('ARSQ'))])
-    final_nc_data_prof['HISTORY_SOFTWARE'] = np.vstack([final_nc_data_prof["HISTORY_SOFTWARE"], np.array(list('DMPS'))])
-    final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] = np.vstack([final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"], np.array(list('B_V0'))])
+    if final_nc_data_prof["HISTORY_DATE"] is None:
+        final_nc_data_prof["HISTORY_DATE"] = np.array(list(str(datetime.now().strftime("%Y%m%d%H%M%S"))))
+    else:
+        final_nc_data_prof["HISTORY_DATE"] = np.vstack([final_nc_data_prof["HISTORY_DATE"], np.array(list(str(datetime.now().strftime("%Y%m%d%H%M%S"))))])
+    
+    if final_nc_data_prof["HISTORY_INSTITUTION"] is None:
+        final_nc_data_prof["HISTORY_INSTITUTION"] = np.array(list('JP  '))
+    else:
+        final_nc_data_prof["HISTORY_INSTITUTION"] = np.vstack([final_nc_data_prof["HISTORY_INSTITUTION"], np.array(list('JP  '))])
+    
+    if final_nc_data_prof["HISTORY_STEP"] is None:
+        final_nc_data_prof["HISTORY_STEP"] = np.array(list('ARSQ'))
+    else:
+        final_nc_data_prof["HISTORY_STEP"] = np.vstack([final_nc_data_prof["HISTORY_STEP"], np.array(list('ARSQ'))])
+    
+    if final_nc_data_prof['HISTORY_SOFTWARE'] is None:
+        final_nc_data_prof['HISTORY_SOFTWARE'] =  np.array(list('DMPS'))
+    else:
+        final_nc_data_prof['HISTORY_SOFTWARE'] = np.vstack([final_nc_data_prof["HISTORY_SOFTWARE"], np.array(list('DMPS'))])
+    
+    if final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] is None:
+        final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] = np.array(list('B_V0'))
+    else:
+        final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] = np.vstack([final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"], np.array(list('B_V0'))])
 
     # PAREMS that are sometimes set
     # if these PAREMS are not set, we fill the data w/ empty vals
     if parems_to_fill is not None:
         for parem in parems_to_fill:
             if parem == 'HISTORY_START_PRES':
-                final_nc_data_prof['HISTORY_START_PRES'] = np.append(final_nc_data_prof["HISTORY_START_PRES"], 99999.0)
+                if final_nc_data_prof['HISTORY_START_PRES'] is None:
+                    final_nc_data_prof['HISTORY_START_PRES'] = 99999.0
+                else:
+                    final_nc_data_prof['HISTORY_START_PRES'] = np.append(final_nc_data_prof["HISTORY_START_PRES"], 99999.0)
             elif parem == 'HISTORY_STOP_PRES':
-                final_nc_data_prof['HISTORY_STOP_PRES'] = np.append(final_nc_data_prof["HISTORY_STOP_PRES"], 99999.0)
+                if final_nc_data_prof['HISTORY_STOP_PRES'] is None:
+                    final_nc_data_prof['HISTORY_STOP_PRES'] = 99999.0
+                else:
+                    final_nc_data_prof['HISTORY_STOP_PRES'] = np.append(final_nc_data_prof["HISTORY_STOP_PRES"], 99999.0)
             elif parem == 'HISTORY_QCTEST':
-                final_nc_data_prof['HISTORY_QCTEST'] = np.vstack([final_nc_data_prof["HISTORY_QCTEST"], np.array(list(' ' * 16))])
+                if final_nc_data_prof['HISTORY_QCTEST'] is None:
+                    final_nc_data_prof['HISTORY_QCTEST'] = np.array(list(' ' * 16))
+                else:
+                    final_nc_data_prof['HISTORY_QCTEST'] = np.vstack([final_nc_data_prof["HISTORY_QCTEST"], np.array(list(' ' * 16))])
             elif parem == 'HISTORY_PARAMETER':
-                final_nc_data_prof['HISTORY_PARAMETER'] = np.vstack([final_nc_data_prof["HISTORY_PARAMETER"], np.array(list(' ' * 16))])
+                if final_nc_data_prof['HISTORY_PARAMETER'] is None:
+                    final_nc_data_prof['HISTORY_PARAMETER'] =  np.array(list(' ' * 16))
+                else:
+                    final_nc_data_prof['HISTORY_PARAMETER'] = np.vstack([final_nc_data_prof["HISTORY_PARAMETER"], np.array(list(' ' * 16))])
             elif parem == 'HISTORY_PREVIOUS_VALUE':
-                final_nc_data_prof['HISTORY_PREVIOUS_VALUE'] = np.append(final_nc_data_prof["HISTORY_PREVIOUS_VALUE"], 99999.0)
+                if final_nc_data_prof['HISTORY_PREVIOUS_VALUE'] is None:
+                    final_nc_data_prof['HISTORY_PREVIOUS_VALUE'] = 99999.0
+                else:
+                    final_nc_data_prof['HISTORY_PREVIOUS_VALUE'] = np.append(final_nc_data_prof["HISTORY_PREVIOUS_VALUE"], 99999.0)
             elif parem == 'HISTORY_REFERENCE':
-                final_nc_data_prof['HISTORY_REFERENCE'] = np.vstack([final_nc_data_prof["HISTORY_REFERENCE"], np.array(list(' ' * 64))])
+                if final_nc_data_prof['HISTORY_REFERENCE'] is None:
+                    final_nc_data_prof['HISTORY_REFERENCE'] = np.array(list(' ' * 64))
+                else:
+                    final_nc_data_prof['HISTORY_REFERENCE'] = np.vstack([final_nc_data_prof["HISTORY_REFERENCE"], np.array(list(' ' * 64))])
     
     return final_nc_data_prof
 
@@ -834,11 +873,16 @@ def set_history_parems(final_nc_data_prof, type_to_set, **kwargs):
     """
     
     if type_to_set == "SET_IP":
-        final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('  IP'))])
+        # We always set this first
+        if final_nc_data_prof["HISTORY_ACTION"] is None:
+            final_nc_data_prof["HISTORY_ACTION"] = np.array(list('  IP'))
+        else:
+            final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('  IP'))])
+        
         final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
-   
+    
+    # So no need to verify if arrs are empty for remaining if statements
     if type_to_set == "SET_QCP$" or "SET_QCF$":
-
         if type_to_set == "SET_QCF$":
             final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('QCF$'))])
         if type_to_set == "SET_QCP$":
@@ -881,7 +925,65 @@ def set_history_parems(final_nc_data_prof, type_to_set, **kwargs):
         final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
     
     return final_nc_data_prof
+
+def get_padded_array(kwargs, key, pad_type):
+
+    value = kwargs.get(key)
+
+    if value is None:
+        if pad_type == "SET_DATE":
+            return np.pad(list(' '), (0, 14 - 1), mode='constant', constant_values=' ')
+        else:
+            return np.pad(list('none'), (0, 256 - 4), mode='constant', constant_values=' ')
+    else:
+        if pad_type == "SET_DATE":
+            return np.pad(
+                list(value),
+                (0, 14 - len(value)),
+                mode='constant',
+                constant_values=' '
+            )
+        else:
+            return np.pad(
+                list(value),
+                (0, 256 - len(value)),
+                mode='constant',
+                constant_values=' '
+            )
     
+def set_sci_calib_parems(final_nc_data_prof, param_to_set, **kwargs):
+
+    pres = get_padded_array(kwargs, "pres", param_to_set)
+    temp = get_padded_array(kwargs, "temp", param_to_set)
+    cndc = get_padded_array(kwargs, "cndc", param_to_set)
+    psal = get_padded_array(kwargs, "psal", param_to_set)
+    temp_cndc = get_padded_array(kwargs, "temp_cndc", param_to_set)
+    nb_sample_ctd = get_padded_array(kwargs, "nb_sample_ctd", param_to_set)
+
+    if param_to_set == "SET_COEFFICIENT":
+        if final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] is None:
+            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
+        else:
+            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.stack([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])])
+    if param_to_set == "SET_COMMENT":
+        if final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] is None:
+            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
+        else:
+            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.stack([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"],np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])])
+    if param_to_set == "SET_EQUATION":
+        if final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] is None:
+            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
+        else:
+            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.stack([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"],np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])])
+    if param_to_set == "SET_DATE":
+        if final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] is None:
+            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
+        else:
+            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.stack([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"],np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])])
+    
+    return final_nc_data_prof
+
+        
 def sal_recalc_RBRargo3_3k_procedures(processed_argo_data):
 
     # Step 1: recompute sal due to compressinility effect  
@@ -896,7 +998,8 @@ def sal_recalc_RBRargo3_3k_procedures(processed_argo_data):
     
 def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = None):
 
-    org_files = sorted(glob.glob(os.path.join(org_netcdf_fp, "*.nc")))
+    if org_netcdf_fp is not None:
+        org_files = sorted(glob.glob(os.path.join(org_netcdf_fp, "*.nc")))
     processed_argo_data = read_intermediate_nc_file(nc_filepath)
     processed_argo_data = format_argo_data(processed_argo_data)
 
@@ -1050,8 +1153,9 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
 
     for profile_num in processed_argo_data["PROFILE_NUMS"]:
 
-        org_profile_file = [f for f in org_files if f.endswith(f"R{float_num}_{profile_num:03}.nc")]
-        argo_org_file = nc4.Dataset(org_profile_file[0])
+        if org_netcdf_fp is not None:
+            org_profile_file = [f for f in org_files if f.endswith(f"R{float_num}_{profile_num:03}.nc")]
+            argo_org_file = nc4.Dataset(org_profile_file[0])
 
         # Get corresponding index of profile in argo_data dict
         i = np.where(processed_argo_data["PROFILE_NUMS"] == profile_num)
@@ -1069,8 +1173,11 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["CONFIG_MISSION_NUMBER"] = profile_num
         final_nc_data_prof["CYCLE_NUMBER"] = profile_num
         
-        final_nc_data_prof["DATE_UPDATE"] = str(datetime.now().strftime("%Y%m%d%H%M%S"))
-        final_nc_data_prof["DATE_CREATION"] = np.squeeze(argo_org_file.variables["DATE_CREATION"][:].filled(argo_org_file.variables["DATE_CREATION"].getncattr("_FillValue")))
+        final_nc_data_prof["DATE_UPDATE"] = list(str(datetime.now().strftime("%Y%m%d%H%M%S")))
+        if org_netcdf_fp is None:
+            final_nc_data_prof["DATE_CREATION"] = list(str(datetime.now().strftime("%Y%m%d%H%M%S")))
+        else:
+            final_nc_data_prof["DATE_CREATION"] = np.squeeze(argo_org_file.variables["DATE_CREATION"][:].filled(argo_org_file.variables["DATE_CREATION"].getncattr("_FillValue")))
 
         final_nc_data_prof["JULD"] = np.squeeze(processed_argo_data["JULDs"][i])
         final_nc_data_prof["JULD_LOCATION"] = np.squeeze(processed_argo_data["JULD_LOCATIONs"][i])
@@ -1105,68 +1212,75 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["TEMP_ADJUSTED_ERROR"] = np.full(np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index]).shape, fill_value = TEMP_ADJUSTED_ERROR_FILLVAL)
         
         # Set overall profile quality flag
-        final_nc_data_prof["PROFILE_CNDC_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["CNDC_ADJUSTED_QC"][i, :nan_index]))
+        final_nc_data_prof["PROFILE_CNDC_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["PSAL_ADJUSTED_QC"][i, :nan_index]))    # Because we replace CNDC QC data arrs with PSAL QC ones
         final_nc_data_prof["PROFILE_NB_SAMPLE_CTD_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["NB_SAMPLE_CTD_QC"][i, :nan_index]))
         final_nc_data_prof["PROFILE_PRES_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["PRES_ADJUSTED_QC"][i, :nan_index]))
         final_nc_data_prof["PROFILE_PSAL_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["PSAL_ADJUSTED_QC"][i, :nan_index]))
         final_nc_data_prof["PROFILE_TEMP_CNDC_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["TEMP_CNDC_QC"][i, :nan_index]))
         final_nc_data_prof["PROFILE_TEMP_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["TEMP_ADJUSTED_QC"][i, :nan_index]))
 
-        # scientific_calib parems
-        final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.squeeze(argo_org_file.variables["SCIENTIFIC_CALIB_COEFFICIENT"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_COEFFICIENT"].getncattr("_FillValue")))
-        final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.squeeze(argo_org_file.variables["SCIENTIFIC_CALIB_COMMENT"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_COMMENT"].getncattr("_FillValue")))
-        final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.squeeze(argo_org_file.variables["SCIENTIFIC_CALIB_DATE"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_DATE"].getncattr("_FillValue")))
-        final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.squeeze(argo_org_file.variables["SCIENTIFIC_CALIB_EQUATION"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_EQUATION"].getncattr("_FillValue")))
-
-        # init history parems
-        history_software = argo_org_file.variables["HISTORY_SOFTWARE"]
-        history_software = np.squeeze(np.char.decode(history_software[:].filled(history_software.getncattr("_FillValue"))))
+        # Set scientific_calib parems
+        # Get org data if it exists 
+        if org_netcdf_fp is not None:
+            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.squeeze(np.char.decode(argo_org_file.variables["SCIENTIFIC_CALIB_COEFFICIENT"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_COEFFICIENT"].getncattr("_FillValue"))))
+            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.squeeze(np.char.decode(argo_org_file.variables["SCIENTIFIC_CALIB_COMMENT"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_COMMENT"].getncattr("_FillValue"))))
+            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.squeeze(np.char.decode(argo_org_file.variables["SCIENTIFIC_CALIB_DATE"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_DATE"].getncattr("_FillValue"))))
+            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.squeeze(np.char.decode(argo_org_file.variables["SCIENTIFIC_CALIB_EQUATION"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_EQUATION"].getncattr("_FillValue"))))
         
-        history_software_release = argo_org_file.variables["HISTORY_SOFTWARE_RELEASE"]
-        history_software_release = np.squeeze(np.char.decode(history_software_release[:].filled(history_software_release.getncattr("_FillValue"))))
+        else:
+            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = None
+            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = None
+            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = None
+            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = None
+
+        if processed_argo_data["PRES_OFFSET"][i][0] is not None:
+            set_sci_calib_parems(final_nc_data_prof, "SET_COEFFICIENT", 
+                                    pres = f"surface_pressure={float(processed_argo_data["PRES_OFFSET"][i][0]):.2f} dbar")
+        else:
+            set_sci_calib_parems(final_nc_data_prof, "SET_COEFFICIENT")
         
-        history_reference = argo_org_file.variables["HISTORY_REFERENCE"]
-        history_reference = np.squeeze(np.char.decode(history_reference[:].filled(history_reference.getncattr("_FillValue"))))
+        set_sci_calib_parems(final_nc_data_prof, "SET_COMMENT",
+                                pres = f"Pressure adjusted during delayed mode processing based on most recent valid surface pressure")
+        set_sci_calib_parems(final_nc_data_prof, "SET_EQUATION",
+                                pres = f"PRES_ADJUSTED = PRES - surface_pressure")
+        set_sci_calib_parems(final_nc_data_prof, "SET_DATE",
+                                pres = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}")
         
-        history_start_pres_var = argo_org_file.variables["HISTORY_START_PRES"]
-        history_start_pres_var = np.squeeze(history_start_pres_var[:].filled(history_start_pres_var.getncattr("_FillValue")))
-        
-        history_stop_pres_var = argo_org_file.variables["HISTORY_STOP_PRES"]
-        history_stop_pres_var = np.squeeze(history_stop_pres_var[:].filled(history_stop_pres_var.getncattr("_FillValue")))
+        # expand dim if it is incorrect
+        if len(final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"].shape) == 2:
+            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.expand_dims(final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"], axis=0)
+            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.expand_dims(final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"], axis=0)
+            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.expand_dims(final_nc_data_prof["SCIENTIFIC_CALIB_DATE"], axis=0)
+            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.expand_dims(final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"], axis=0)
 
-        history_action_var = argo_org_file.variables["HISTORY_ACTION"]
-        history_action_var = np.squeeze(np.char.decode(history_action_var[:].filled(history_action_var.getncattr("_FillValue"))))
-
-        history_qctest_var = argo_org_file.variables["HISTORY_QCTEST"]
-        history_qctest_var = np.squeeze(np.char.decode(history_qctest_var[:].filled(history_qctest_var.getncattr("_FillValue"))))
-
-        history_parameter_var = argo_org_file.variables["HISTORY_PARAMETER"]
-        history_parameter_var = np.squeeze(np.char.decode(history_parameter_var[:].filled(history_parameter_var.getncattr("_FillValue"))))
-
-        history_step_var = argo_org_file.variables["HISTORY_STEP"]
-        history_step_var = np.squeeze(np.char.decode(history_step_var[:].filled(history_step_var.getncattr("_FillValue"))))
-
-        history_previous_value_var = argo_org_file.variables["HISTORY_PREVIOUS_VALUE"]
-        history_previous_value_var = np.squeeze(history_previous_value_var[:].filled(history_previous_value_var.getncattr("_FillValue")))
-
-        history_date_var = argo_org_file.variables["HISTORY_DATE"]
-        history_date_var = np.squeeze(np.char.decode(history_date_var[:].filled(history_date_var.getncattr("_FillValue"))))
-
-        history_institution_var = argo_org_file.variables["HISTORY_INSTITUTION"]
-        history_institution_var = np.squeeze(np.char.decode(history_institution_var[:].filled(history_institution_var.getncattr("_FillValue"))))
-
-        final_nc_data_prof["HISTORY_STOP_PRES"] = history_stop_pres_var
-        final_nc_data_prof["HISTORY_START_PRES"] = history_stop_pres_var
-        final_nc_data_prof["HISTORY_ACTION"] = history_action_var
-        final_nc_data_prof["HISTORY_QCTEST"] = history_qctest_var
-        final_nc_data_prof["HISTORY_PARAMETER"] = history_parameter_var
-        final_nc_data_prof["HISTORY_STEP"] = history_step_var
-        final_nc_data_prof["HISTORY_PREVIOUS_VALUE"] = history_previous_value_var
-        final_nc_data_prof["HISTORY_DATE"] = history_date_var
-        final_nc_data_prof["HISTORY_INSTITUTION"] = history_institution_var
-        final_nc_data_prof["HISTORY_SOFTWARE"] = history_software
-        final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"] = history_software_release
-        final_nc_data_prof["HISTORY_REFERENCE"] = history_reference
+        # Get history params
+        # Get org data if it exists 
+        if org_netcdf_fp is not None:
+            final_nc_data_prof["HISTORY_SOFTWARE"] = np.squeeze(np.char.decode(argo_org_file.variables["HISTORY_SOFTWARE"][:].filled(argo_org_file.variables["HISTORY_SOFTWARE"].getncattr("_FillValue"))))
+            final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"] = np.squeeze(np.char.decode(argo_org_file.variables["HISTORY_SOFTWARE_RELEASE"][:].filled(argo_org_file.variables["HISTORY_SOFTWARE_RELEASE"].getncattr("_FillValue"))))
+            final_nc_data_prof["HISTORY_REFERENCE"] = np.squeeze(np.char.decode(argo_org_file.variables["HISTORY_REFERENCE"][:].filled(argo_org_file.variables["HISTORY_REFERENCE"].getncattr("_FillValue"))))
+            final_nc_data_prof["HISTORY_START_PRES"] = np.squeeze(argo_org_file.variables["HISTORY_START_PRES"][:].filled(argo_org_file.variables["HISTORY_START_PRES"].getncattr("_FillValue")))
+            final_nc_data_prof["HISTORY_STOP_PRES"] = np.squeeze(argo_org_file.variables["HISTORY_STOP_PRES"][:].filled(argo_org_file.variables["HISTORY_STOP_PRES"].getncattr("_FillValue")))
+            final_nc_data_prof["HISTORY_ACTION"] = np.squeeze(np.char.decode(argo_org_file.variables["HISTORY_ACTION"][:].filled(argo_org_file.variables["HISTORY_ACTION"].getncattr("_FillValue"))))
+            final_nc_data_prof["HISTORY_QCTEST"] = np.squeeze(np.char.decode(argo_org_file.variables["HISTORY_QCTEST"][:].filled(argo_org_file.variables["HISTORY_QCTEST"].getncattr("_FillValue"))))
+            final_nc_data_prof["HISTORY_PARAMETER"] = np.squeeze(np.char.decode(argo_org_file.variables["HISTORY_PARAMETER"][:].filled(argo_org_file.variables["HISTORY_PARAMETER"].getncattr("_FillValue"))))
+            final_nc_data_prof["HISTORY_STEP"] = np.squeeze(np.char.decode(argo_org_file.variables["HISTORY_STEP"][:].filled(argo_org_file.variables["HISTORY_STEP"].getncattr("_FillValue"))))
+            final_nc_data_prof["HISTORY_PREVIOUS_VALUE"] = np.squeeze(argo_org_file.variables["HISTORY_PREVIOUS_VALUE"][:].filled(argo_org_file.variables["HISTORY_PREVIOUS_VALUE"].getncattr("_FillValue")))
+            final_nc_data_prof["HISTORY_DATE"] = np.squeeze(np.char.decode(argo_org_file.variables["HISTORY_DATE"][:].filled(argo_org_file.variables["HISTORY_DATE"].getncattr("_FillValue"))))
+            final_nc_data_prof["HISTORY_INSTITUTION"] = np.squeeze(np.char.decode(argo_org_file.variables["HISTORY_INSTITUTION"][:].filled(argo_org_file.variables["HISTORY_INSTITUTION"].getncattr("_FillValue"))))
+        else:
+            final_nc_data_prof["HISTORY_SOFTWARE"] = None
+            final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"] = None
+            final_nc_data_prof["HISTORY_REFERENCE"] = None
+            final_nc_data_prof["HISTORY_START_PRES"] = None
+            final_nc_data_prof["HISTORY_STOP_PRES"] = None
+            final_nc_data_prof["HISTORY_ACTION"] = None
+            final_nc_data_prof["HISTORY_QCTEST"] = None
+            final_nc_data_prof["HISTORY_PARAMETER"] = None
+            final_nc_data_prof["HISTORY_STEP"] = None
+            final_nc_data_prof["HISTORY_PREVIOUS_VALUE"] = None
+            final_nc_data_prof["HISTORY_DATE"] = None
+            final_nc_data_prof["HISTORY_INSTITUTION"] = None
 
         ##### SET FLAGS TO INDICATED WE'VE DONE DELAYED MODE PROCESSING #####
         # Set IP flag: we've operated on the complete input record 
@@ -1205,7 +1319,18 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["CNDC_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
         final_nc_data_prof["CNDC_ADJUSTED_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
 
-        # TODO: 3.5.2 whereever PARAM_ADJUSTED_QC = 4, PARAM_ADJUSTED + PARAM_ADJUSTED_ERROR = FillVal!!
+        # 3.5.2 whereever PARAM_ADJUSTED_QC = 4, PARAM_ADJUSTED + PARAM_ADJUSTED_ERROR = FillVal!!
+        final_nc_data_prof["TEMP_ADJUSTED"][np.where(final_nc_data_prof["TEMP_ADJUSTED_QC"] == 4)] = np.nan
+        final_nc_data_prof["TEMP_ADJUSTED_ERROR"][np.where(final_nc_data_prof["TEMP_ADJUSTED_QC"] == 4)] = np.nan
+        
+        final_nc_data_prof["PRES_ADJUSTED"][np.where(final_nc_data_prof["PRES_ADJUSTED_QC"] == 4)] = np.nan
+        final_nc_data_prof["PRES_ADJUSTED_ERROR"][np.where(final_nc_data_prof["PRES_ADJUSTED_QC"] == 4)] = np.nan
+        
+        final_nc_data_prof["PSAL_ADJUSTED"][np.where(final_nc_data_prof["PSAL_ADJUSTED_QC"] == 4)] = np.nan
+        final_nc_data_prof["PSAL_ADJUSTED_ERROR"][np.where(final_nc_data_prof["PSAL_ADJUSTED_QC"] == 4)] = np.nan
+
+        final_nc_data_prof["CNDC_ADJUSTED"][np.where(final_nc_data_prof["CNDC_ADJUSTED_QC"] == 4)] = np.nan
+        final_nc_data_prof["CNDC_ADJUSTED_ERROR"][np.where(final_nc_data_prof["CNDC_ADJUSTED_QC"] == 4)] = np.nan
 
         make_final_nc_files(final_nc_data_prof, float_num, dest_filepath)
 
@@ -1216,6 +1341,13 @@ def main():
     nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
     orgargo_netcdf_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
     config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_final\\1902655_config_file.txt"
+    """
+    float_num = "F9186"
+    dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_final"
+    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_visual_inspection_new"
+    config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_final\\F9186_config_file.txt"
+    orgargo_netcdf_filepath = None
+    """
     if not os.path.exists(dest_filepath):
         os.mkdir(dest_filepath)
 
@@ -1223,7 +1355,8 @@ def main():
     Pass in an ARGO NETCDF filepath to make config file for parems needed
     to make delayed mode NETCDF file.
     """
-    # make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = orgargo_netcdf_filepath)
+    #make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = orgargo_netcdf_filepath)
+    #make_config_file(float_num, dest_filepath)
 
     process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = orgargo_netcdf_filepath)
 
