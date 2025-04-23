@@ -167,6 +167,23 @@ def pres_depth_check(argo_data):
 
     return argo_data
 
+def temp_check(argo_data):
+    """
+    Checks if pressure is less than 0.1, if so fill TEMP ADJUSTED QC with 4
+    Checks if TEMP < -2, if so it is ICE
+
+    Args:
+        argo_data (dict): dictionary of ARGO delayed mode profile values
+
+    Returns:
+        dict: dictionary of ARGO delayed mode profile values with {PARAM}_ADJUSTED_QC arrs set
+
+    """
+    argo_data["TEMP_ADJUSTED_QC"][np.where(argo_data["TEMPs"] < -2)] = 4
+    argo_data["TEMP_ADJUSTED_QC"][np.where(argo_data["PRESs"] < 0.1)] = 4
+
+    return argo_data
+
 def density_inversion_test(argo_data):
 
     inversion_flags = []
@@ -715,14 +732,13 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
     # CHECK 3: Set QC flags where counts are too high/low
     argo_data = count_check(argo_data)
 
-    # Check 4: Set QC flags where PRES < 1m
-    #          TODO: DOCUMENT
+    # Check 4: Set QC flags where PRES < 1m, 
     argo_data  = pres_depth_check(argo_data)
 
-    # ADD test for TEMP
-    argo_data["TEMP_ADJUSTED_QC"][np.where(argo_data["TEMPs"] < -2)] = 4
+    # Check 5: Set TEMP QC flags where TEMP < -2 and where PRES < 0.1
+    argo_data  = temp_check(argo_data)
 
-    # Check 5: Density Inversion Check
+    # Check 6: Density Inversion Check
     argo_data = density_inversion_test(argo_data)
 
     # Write results back to NETCDF file
