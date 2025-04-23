@@ -83,15 +83,20 @@ FLAG          | DESCRIPTION
 qc_arr_selection           | Array of QC values to look at; EX: if you only want good/ probably good data, pass in [0, 1, 2]
 data_type                  | Either "PSAL" or "TEMP"
 use_adjusted               | True if you want to use PARAM_ADJUSTED data and associated PARAM_ADJUSTED_QC arrays, otherwise false
+date_filter_start          | Format: "YYYY_MM_DD_HH_MM_SS" or None, ability to filter for a date range for dataset graphs, if date_filter_start is specified and date_filter_end is "None", range will be from start date - end of profile data
+date_filter_end            | Format: "YYYY_MM_DD_HH_MM_SS" or None
 
 1. graph_pres_v_var_all()
    - Generates a PRES v DATA_TYPE graph for all profiles
    - Ability to click and select profiles of interest
+   - Ability to filter by date range
 2. graph_TS_all
    - Generates a TS graph for all profiles
    - Ability to click and select profiles of interest
+   - Ability to filter by date range
 3. graph_deep_section_var_all
    - Generates a DEEP SECTION graph for all profiles
+   - Ability to filter by date range
 
 After exiting out of the aforementioned graphs, selected profiles of interest will pop out a data_snapshot_graph, and flag_range_data_graph for TEMP and PSAL where you can manipulate QC flags
 
