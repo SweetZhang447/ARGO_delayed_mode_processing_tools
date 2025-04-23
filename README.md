@@ -49,6 +49,8 @@ Steps and checks are outlined below:
    - NOTE: -99 is used to indicate misssing/ nonexistent NB_SAMPLE_CTD values.
 5.  pres_depth_check()
    - Checks where pressure < 1 dbar, and marks PSAL and CNDC ADJUSTED_QC as 4 to indicate bad value.
+6. temp_check()
+   - Checks where pressure < 0.1 dbar, and where TEMP < -2, sets TEMP_ADJUSTED_QC as 4 to indicate bad value.
 
 ### FUNCTION: manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_number)
 This function is designed to be used to look at and set QC flags for a single profile. 
