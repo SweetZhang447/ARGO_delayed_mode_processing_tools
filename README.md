@@ -35,15 +35,17 @@ Some functions may require more input parameters, more details outlined below.
 This function is designed to be the first step run after the generation of the intermediate NETCDF files.
 Steps and checks are outlined below:
 
-1. verify_autoset_qc_flags()
-   - If your intermediate file was generated from real time ARGO NETCDF files, then there are already QC flags present. This module pops up a series of graphs so the user can verify the validity of these autoset flags.
-2. juld_check()
+1. juld_check()
    - Checks for missing JULD data values
    - If JULD_LOCATION is available, then fill in JULD with that value, set JULD_QC to 5 to indicate changed value
    - If both are missing, then interpolate values for JULD and set JULD_QC to 8 to indicate interpolated value
-3. lat_lon_check()
+2. lat_lon_check()
    - Checks for missing LAT/ LON values
-   - If missing, then interpolates LAT/LON and sets POSITION_QC to 8 
+   - If missing, then interpolates LAT/LON and sets POSITION_QC to 8
+3. verify_autoset_qc_flags_and_density_inversions()
+   - If your intermediate file was generated from real time ARGO NETCDF files, then there are already QC flags present. This module pops up a series of graphs so the user can verify the validity of these autoset flags.
+   - If any density inversions are found on the profile, it will pop up a datasnapshot graph.
+     - Please look in "README" folder for more details regarding this test
 4. count_check()
    - For bin averaged data, if (NB_SAMPLE_CTD > 50) OR (NB_SAMPLE_CTD < 1 AND NB_SAMPLE_CTD != -99), then set PSAL, CNDC, and TEMP ADJUSTED_QC arrays to 3 to indicate "probably bad" value.
    - NOTE: -99 is used to indicate misssing/ nonexistent NB_SAMPLE_CTD values.
@@ -64,10 +66,12 @@ PARAM (not needed in all functions) | pass in either: PRES, PSAL, or TEMP as a s
 1. data_snapshot_graph(argo_data, profile_number)
    - Generates a graph containing: TS, PRES v PSAL, and PRES v TEMP, along with LAT/LON and JULD information for corresponding profile
    - Ability to flag points for PSAL and TEMP, click on the same point to cycle through QC flag options (good, probably good, probably bad, bad)
+   - Salinity density inversions are marked with edge color "fuchsia"
 2. flag_data_points(argo_data, profile_number, PARAM)
   - For PARAM, pass in either: PRES, PSAL, or TEMP as a string
     - Generates PRESSURE v COUNT, PRES v PSAL, or PRES v TEMP graph
   - Ability to flag individual points, click on the same point to cycle through QC flag options (good, probably good, probably bad, bad)
+  - Salinity density inversions are marked with edge color "fuchsia"
 3. flag_range_data(argo_data, profile_number, PARAM)
   - Ability to flag multiple ranges of points, click on the same point to cycle through QC flag options (good, probably good, probably bad, bad), then a secondary point to define a range.
 4. flag_TS_data(argo_data, profile_num)
