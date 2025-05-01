@@ -174,7 +174,7 @@ def pres_v_var_all(df_PRESs, df_VARs, df_JULD, df_prof_nums, compare_var, float_
 
     return selected_profiles
 
-def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=None, figure= None):
+def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, argodata=None, ax=None, figure= None):
 
     print_multiplot = False
     if ax is None:
@@ -183,30 +183,45 @@ def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=N
     else:
         print_multiplot = True
         fig = figure
+
+    if argodata is None and data_type == "PSAL":
+        raise Exception("Need argo_data param if data type is PSAL to run density inversion tests")
     
     colors = []
     selected_points = []
+    edge_colors = []
+    exclude = []
     for qc in qc_arr:
         if qc == 4:                 # bad
             colors.append('red')
             selected_points.append(4)
+            edge_colors.append('red')
         elif qc == 3:               # prob bad
             colors.append('orange')
             selected_points.append(3)
+            edge_colors.append('orange')
         elif qc == 2:               # prob good
             colors.append('aqua')
             selected_points.append(2)
+            edge_colors.append('aqua')
         else:                       # qc == 1, val is good
             colors.append('green')
             selected_points.append(1)
-            
+            edge_colors.append('green')
+    
+    # Inversion test
+    if argodata is not None:
+        inversion = density_inversion_test(argodata, profile_num)
+        for i in inversion:
+            edge_colors[i] = 'fuchsia'
+
     # Plot good points (green)
     if data_type == "PRES":
         # Scatter plot for good and bad points
-        scatter_plt = ax.scatter(np.arange(len(PRES)), PRES, color=colors, s=30, alpha=0.9, label='Good Data')
+        scatter_plt = ax.scatter(np.arange(len(PRES)), PRES, color=colors, s=35, alpha=0.9, label='Good Data')
     else:
         ax.plot(var, PRES, color='blue', linewidth=2)
-        scatter_plt = ax.scatter(var, PRES, color=colors, s=30, alpha=0.9)
+        scatter_plt = ax.scatter(var, PRES, color=colors, edgecolors=edge_colors, s=35, alpha=0.9)
 
     # Invert y-axis and add grid
     ax.invert_yaxis()
@@ -221,47 +236,82 @@ def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=N
 
     # Click event
     def on_click(event):
-        nonlocal selected_points
-        for scatter, graph_colors in [(scatter_plt, colors)]:
+        nonlocal selected_points, argodata, profile_num, exclude
+        for scatter, graph_colors, edgecolor in [(scatter_plt, colors, edge_colors)]:
             cont, ind = scatter.contains(event)
             if cont:
                 clicked_idx = ind["ind"][0] 
                 # Get org color of point
                 org_color = graph_colors[clicked_idx]
+                # Check to see if clicked point was flagged as density inversion
+                run_density_inversion = False
+                if argodata is not None:
+                    if edgecolor[clicked_idx] == 'fuchsia':
+                        run_density_inversion = True
                 # Cycle through color options
                 if org_color == 'red':
                     graph_colors[clicked_idx] = 'orange'
                     selected_points[clicked_idx] = 3
+                    edge_colors[clicked_idx] = 'orange'
                 elif org_color == 'orange':
                     graph_colors[clicked_idx] = 'aqua'
                     selected_points[clicked_idx] = 2
+                    edge_colors[clicked_idx] = 'aqua'
                 elif org_color == 'aqua':
                     graph_colors[clicked_idx] = 'green'
                     selected_points[clicked_idx] = 1
+                    edge_colors[clicked_idx] = 'green'
                 else:
                     graph_colors[clicked_idx] = 'red'
                     selected_points[clicked_idx] = 4
-                
+                    edge_colors[clicked_idx] = 'red'
+
+                if run_density_inversion == True:
+                    # see what color we've landed on
+                    # if we've marked a point as bad, we need to check it again
+                    if graph_colors[clicked_idx] == 'orange' or graph_colors[clicked_idx] == 'red':
+                        # add it to exclude list
+                        exclude.append(clicked_idx)
+                        inversion = density_inversion_test(argodata, profile_num, exclude_pts=exclude)
+                        for i in inversion:
+                            edgecolor[i] = 'fuchsia'
+
                 # Update the color of the clicked point
                 scatter.set_color(graph_colors)
+                scatter.set_edgecolors(edgecolor)
                 fig.canvas.draw_idle()
 
     fig.canvas.mpl_connect('button_press_event', on_click)
     
     if print_multiplot == False:
         # Custom legend elements
-        custom_legend = [
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', markersize=10),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10)
-        ]
-        # Add legend to the plot
-        ax.legend(
-            custom_legend,
-            ["Bad", "Probably Bad", "Probably Good", "Good"],  # Custom labels
-            loc='lower left', title="Data Quality"
-        )
+        if argodata is not None:
+            custom_legend = [
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='white', markeredgecolor='fuchsia', markersize=9) 
+            ]
+            # Add legend to the plot
+            ax.legend(
+                custom_legend,
+                ["Bad", "Probably Bad", "Probably Good", "Good", "Density Inversion"],  # Custom labels
+                loc='lower left', title="Data Quality"
+            )
+        else: 
+            custom_legend = [
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10),
+            ]
+            # Add legend to the plot
+            ax.legend(
+                custom_legend,
+                ["Bad", "Probably Bad", "Probably Good", "Good"],  # Custom labels
+                loc='lower left', title="Data Quality"
+            )
 
     if data_type == "PRES":
         # Add labels and title
@@ -280,7 +330,48 @@ def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, ax=N
         plt.show()
 
     return selected_points
-    
+
+def density_inversion_test(argo_data, prof_num, exclude_pts = None):
+
+    i =  np.where(argo_data["PROFILE_NUMS"] == prof_num)[0][0]
+    psal = copy.deepcopy(argo_data["PSAL_ADJUSTED"][i])
+    temp = copy.deepcopy(argo_data["TEMP_ADJUSTED"][i])
+    pres = copy.deepcopy(argo_data["PRES_ADJUSTED"][i])
+    # apply QC to data
+    psal[np.where(argo_data["PSAL_ADJUSTED_QC"][i] == 4)] = np.nan
+    temp[np.where(argo_data["TEMP_ADJUSTED_QC"][i] == 4)] = np.nan
+    pres[np.where(argo_data["PRES_ADJUSTED_QC"][i] == 4)] = np.nan
+    lat = argo_data["LATs"][i]
+    lon = argo_data["LONs"][i]
+
+    # Get rid of excluded points
+    if exclude_pts is not None:
+        for i in exclude_pts:
+            psal[i] = np.nan
+            temp[i] = np.nan
+            pres[i] = np.nan
+
+    # Convert PSAL to Absolute Salinity
+    abs_sal = gsw.SA_from_SP(psal, pres, lon, lat)
+    # Convert TEMP to Conservative Temperature
+    cons_temp = gsw.CT_from_t(abs_sal, temp, pres)
+    # Calculate in-situ density
+    dens = gsw.rho(abs_sal, cons_temp, pres)
+ 
+    failed_idxs = []
+    valid_idxs = np.where(~np.isnan(dens))[0]   # gets only valid dens
+    for j in range(len(valid_idxs) - 1):
+            idx1 = valid_idxs[j]
+            idx2 = valid_idxs[j + 1]
+            if dens[idx2] < dens[idx1]:
+                # Mark both points involved in inversion
+                failed_idxs.extend([idx1, idx2])
+
+    failed_idxs = sorted(set(failed_idxs))  # Remove duplicates and sort
+    print(f"Failed density inversion at indices: {failed_idxs}")
+
+    return failed_idxs
+
 def merge_ranges(ranges):
     # Sort the ranges by their start values
     sorted_ranges = sorted(ranges, key=lambda x: x[0])
@@ -319,10 +410,10 @@ def flag_range_data_graphs(var, PRES, data_type, qc_arr, profile_num, date):
   
     # Plot points
     if data_type == 'PRES':
-        scatter_plt = ax.scatter(np.arange(len(PRES)), PRES, color=colors, s=30, alpha=0.9)
+        scatter_plt = ax.scatter(np.arange(len(PRES)), PRES, color=colors, s=35, alpha=0.9)
     else:
         ax.plot(var, PRES, color='blue', linewidth=2)  # Line plot
-        scatter_plt = ax.scatter(var, PRES, color=colors, s=30, alpha=0.9)
+        scatter_plt = ax.scatter(var, PRES, color=colors, s=35, alpha=0.9)
 
     # Invert y-axis and add grid
     plt.gca().invert_yaxis()

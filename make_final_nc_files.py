@@ -165,7 +165,7 @@ def make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = None):
             wmo_inst_type = np.squeeze(np.char.decode(wmo_inst_type[:].filled(wmo_inst_type.getncattr("_FillValue"))))
             txt_file.write(f"WMO_INST_TYPE = {''.join(wmo_inst_type)}\n")
         
-        txt_file.write(f"===========================ADJUSTED_ERROR_PAREMS===========================\n")
+        txt_file.write(f"===========================ADJUSTED_ERROR_PARAMS===========================\n")
         txt_file.write(f"CNDC_ADJUSTED_ERROR = None\n")
         txt_file.write(f"PRES_ADJUSTED_ERROR = None\n")
         txt_file.write(f"PSAL_ADJUSTED_ERROR = None\n")
@@ -964,22 +964,22 @@ def set_sci_calib_parems(final_nc_data_prof, param_to_set, **kwargs):
         if final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] is None:
             final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
         else:
-            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.stack([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])])
+            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.concatenate([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])[np.newaxis, ...]], axis=0)
     if param_to_set == "SET_COMMENT":
         if final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] is None:
             final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
         else:
-            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.stack([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"],np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])])
+            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.concatenate([final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])[np.newaxis, ...]], axis=0)
     if param_to_set == "SET_EQUATION":
         if final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] is None:
             final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
         else:
-            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.stack([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"],np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])])
+            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.concatenate([final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])[np.newaxis, ...]], axis=0)
     if param_to_set == "SET_DATE":
         if final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] is None:
             final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
         else:
-            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.stack([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"],np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])])
+            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] =  np.concatenate([final_nc_data_prof["SCIENTIFIC_CALIB_DATE"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])[np.newaxis, ...]], axis=0)
     
     return final_nc_data_prof
 
@@ -1337,10 +1337,11 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
 def main():
 
     float_num = "1902655"
-    dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_final"
-    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
+    #float_num = "F10051"
+    dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\Ascending\\F10051_final_A"
+    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\Ascending\\F10051_FTR"
     orgargo_netcdf_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
-    config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_final\\1902655_config_file.txt"
+    config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\ARGO_GEN\\F10051_final\\F10051_config_file.txt"
     """
     float_num = "F9186"
     dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_final"

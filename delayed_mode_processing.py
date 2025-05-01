@@ -9,10 +9,11 @@ import netCDF4 as nc4
 import pandas as pd
 import copy
 from scipy.interpolate import interp1d
-from graphs_nc import TS_graph_single_dataset_all_profile, deep_section_var_all, flag_TS_data_graphs, flag_range_data_graphs, flag_point_data_graphs, pres_v_var_all
+from graphs_nc import TS_graph_single_dataset_all_profile, deep_section_var_all, density_inversion_test, flag_TS_data_graphs, flag_range_data_graphs, flag_point_data_graphs, pres_v_var_all
 from tools import from_julian_day, to_julian_day, read_intermediate_nc_file, make_intermediate_nc_file, del_all_nan_slices
 import gsw 
 from matplotlib.lines import Line2D
+from pathlib import Path
 
 def interp_missing_lat_lons(lats, lons, dates):
     """
@@ -184,55 +185,56 @@ def temp_check(argo_data):
 
     return argo_data
 
-def density_inversion_test(argo_data):
+def redundent(argo_data, prof_num):
+
+    i =  np.where(argo_data["PROFILE_NUMS"] == prof_num)[0][0]
 
     inversion_flags = []
 
-    for i in np.arange(argo_data["PSALs"].shape[0]):
-        nan_index = np.where(~np.isnan(argo_data["PRESs"][i, :]))[0][-1] + 1
-        psal = argo_data["PSALs"][i]
-        temp = argo_data["TEMPs"][i]
-        pres = argo_data["PRESs"][i]
-        lat = argo_data["LATs"][i]
-        lon = argo_data["LONs"][i]
+    nan_index = np.where(~np.isnan(argo_data["PRESs"][i, :]))[0][-1] + 1
+    psal = argo_data["PSALs"][i]
+    temp = argo_data["TEMPs"][i]
+    pres = argo_data["PRESs"][i]
+    lat = argo_data["LATs"][i]
+    lon = argo_data["LONs"][i]
 
-        # Convert PSAL to Absolute Salinity
-        abs_sal = gsw.SA_from_SP(psal, pres, lon, lat)
-        # Convert TEMP to Conservative Temperature
-        cons_temp = gsw.CT_from_t(abs_sal, temp, pres)
-        # Calculate in-situ density
-        dens = gsw.rho(abs_sal, cons_temp, pres)
+    # Convert PSAL to Absolute Salinity
+    abs_sal = gsw.SA_from_SP(psal, pres, lon, lat)
+    # Convert TEMP to Conservative Temperature
+    cons_temp = gsw.CT_from_t(abs_sal, temp, pres)
+    # Calculate in-situ density
+    dens = gsw.rho(abs_sal, cons_temp, pres)
 
-        if argo_data["PROFILE_NUMS"][i] == 3:
-            fig, ax = plt.subplots()
-            
-            plt.plot(np.diff(dens[:nan_index]), pres[1:nan_index])
-            plt.show()
+    if argo_data["PROFILE_NUMS"][i] == 3:
+        fig, ax = plt.subplots()
+        
+        plt.plot(np.diff(dens[:nan_index]), pres[1:nan_index])
+        plt.show()
 
-            data_snapshot_graph(argo_data, 3)
+        data_snapshot_graph(argo_data, 3)
 
-        # Check if pressure is strictly increasing
-        # NOTE: our data should be all strictly increasing from make_nc_origin files
-        # TODO: show Josh
-        if np.all(np.diff(pres[:nan_index]) > 0) == True:
-            # if it is then calculate difference
-            delta_density = np.diff(dens)
-            inversion = delta_density < 0
-            inversion_flags.append(inversion)
-        # Check if pressure is strictly decreasing 
-        elif np.all(np.diff(pres[:nan_index]) < 0) == True:
-            delta_density = np.diff(dens)
-            inversion = delta_density > 0
-            inversion_flags.append(inversion)
-        else:
-            # need to sort pressure so it is strictly increasing
-            sorted_indices = np.argsort(pres[:nan_index])
-            # apply sorted pressure order to dens array
-            sorted_dens = dens[sorted_indices]
+    # Check if pressure is strictly increasing
+    # NOTE: our data should be all strictly increasing from make_nc_origin files
+    # TODO: show Josh
+    if np.all(np.diff(pres[:nan_index]) > 0) == True:
+        # if it is then calculate difference
+        delta_density = np.diff(dens)
+        inversion = delta_density < 0
+        inversion_flags.append(inversion)
+    # Check if pressure is strictly decreasing 
+    elif np.all(np.diff(pres[:nan_index]) < 0) == True:
+        delta_density = np.diff(dens)
+        inversion = delta_density > 0
+        inversion_flags.append(inversion)
+    else:
+        # need to sort pressure so it is strictly increasing
+        sorted_indices = np.argsort(pres[:nan_index])
+        # apply sorted pressure order to dens array
+        sorted_dens = dens[sorted_indices]
 
-            delta_density = np.diff(sorted_dens)
-            inversion = delta_density < 0
-            inversion_flags.append(inversion)
+        delta_density = np.diff(sorted_dens)
+        inversion = delta_density < 0
+        inversion_flags.append(inversion)
 
     # apply mask to arrays
     for i in range(len(inversion_flags)):
@@ -243,31 +245,6 @@ def density_inversion_test(argo_data):
         argo_data["TEMP_ADJUSTED_QC"][i][flagged_indices] = 4
 
     return argo_data
-
-def process_autoset_qc_flags(qc_array, adjusted_qc_array, adjusted_data, label, profile_num, julds, pres_data):
-    """
-    REDUNDANT/ NOT USED as of 2/18
-    """
-    if not (np.all(qc_array == 0) or np.all(qc_array == 1)):
-        if np.any(qc_array == 3) or np.any(qc_array == 4):
-            selected_points = flag_point_data_graphs(adjusted_data, pres_data, label, qc_array, profile_num, julds)
-            for j in np.arange(0, len(selected_points)):
-                index = selected_points[j]
-                # Value is bad, mark in both qc + adjusted_qc
-                if index == 4:
-                    qc_array[j] = 4
-                    adjusted_qc_array[j] = 4
-                elif index == 3:                    # probably bad/ good, mark in just adjusted
-                    adjusted_qc_array[j] = 3
-                elif index == 2:
-                    adjusted_qc_array[j] = 2
-                else:
-                    qc_array[j] = 1
-                    adjusted_qc_array[j] = 1
-            print("Finish setting QC arrays")
-
-            return True, qc_array, adjusted_qc_array
-    return False, qc_array, adjusted_qc_array
 
 def verify_autoset_qc_flags(argo_data):
     """
@@ -284,7 +261,9 @@ def verify_autoset_qc_flags(argo_data):
         sal_checked = False
         temp_checked = False
         pres_checked = False
-        # trigger_ts = False
+        
+        # Run density inversion test
+        failed_idxs = density_inversion_test(argo_data, argo_data["PROFILE_NUMS"][i])
 
         # Check that QC_FLAG_CHECK has not been set yet
         if argo_data["QC_FLAG_CHECK"][i] == 0:
@@ -293,48 +272,13 @@ def verify_autoset_qc_flags(argo_data):
             if ((not (np.all(argo_data["TEMP_QC"][i] == 0) or np.all(argo_data["TEMP_QC"][i] == 1))) and 
                 (np.any(argo_data["TEMP_QC"][i] == 3) or np.any(argo_data["TEMP_QC"][i] == 4))) or \
                 ((not (np.all(argo_data["PSAL_QC"][i] == 0) or np.all(argo_data["PSAL_QC"][i] == 1))) and 
-                (np.any(argo_data["PSAL_QC"][i] == 3) or np.any(argo_data["PSAL_QC"][i] == 4))):
+                (np.any(argo_data["PSAL_QC"][i] == 3) or np.any(argo_data["PSAL_QC"][i] == 4))) or \
+                failed_idxs:
                 argo_data = data_snapshot_graph(argo_data, argo_data["PROFILE_NUMS"][i])
                 sal_checked = True
                 temp_checked = True
                 pres_checked = True
-
-            # pres_checked, argo_data["PRES_QC"][i], argo_data["PRES_ADJUSTED_QC"][i] = process_autoset_qc_flags(argo_data["PRES_QC"][i], argo_data["PRES_ADJUSTED_QC"][i], None, "PRES", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
-            # temp_checked, argo_data["TEMP_QC"][i], argo_data["TEMP_ADJUSTED_QC"][i] = process_autoset_qc_flags(argo_data["TEMP_QC"][i], argo_data["TEMP_ADJUSTED_QC"][i], argo_data["TEMP_ADJUSTED"][i], "TEMP", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
-            # sal_checked, argo_data["PSAL_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i] = process_autoset_qc_flags(argo_data["PSAL_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i], argo_data["PSAL_ADJUSTED"][i], "PSAL", argo_data["PROFILE_NUMS"][i], argo_data["JULDs"][i], argo_data["PRES_ADJUSTED"][i])
-            # # Trigger TS data graph if any flag required checking
-            # if temp_checked or sal_checked:
-            #     trigger_ts = True
-            # if trigger_ts == True:
-            #     selected_points = flag_TS_data_graphs(argo_data["PSAL_ADJUSTED"][i], argo_data["TEMP_ADJUSTED"][i], argo_data["JULDs"][i], argo_data["LONs"][i], argo_data["LATs"][i], argo_data["PRES_ADJUSTED"][i], argo_data["PROFILE_NUMS"][i], argo_data["TEMP_ADJUSTED_QC"][i], argo_data["PSAL_ADJUSTED_QC"][i])
-            #     for j in np.arange(0, len(selected_points)):
-            #         index = selected_points[j]
-            #         # both points are bad
-            #         if index == 4:
-            #             argo_data["PSAL_ADJUSTED_QC"][i][j] = 4
-            #             argo_data["PSAL_QC"][i][j] = 4
-            #             argo_data["TEMP_ADJUSTED_QC"][i][j] = 4
-            #             argo_data["TEMP_QC"][i][j] = 4 
-            #         # sal is bad
-            #         elif index == 3:
-            #             argo_data["PSAL_ADJUSTED_QC"][i][j] = 4
-            #             argo_data["PSAL_QC"][i][j] = 4
-            #             argo_data["TEMP_ADJUSTED_QC"][i][j] = 1
-            #             argo_data["TEMP_QC"][i][j] = 1
-            #         # temp is bad
-            #         elif index == 2:
-            #             argo_data["PSAL_ADJUSTED_QC"][i][j] = 1
-            #             argo_data["PSAL_QC"][i][j] = 1
-            #             argo_data["TEMP_ADJUSTED_QC"][i][j] = 4
-            #             argo_data["TEMP_QC"][i][j] = 4
-            #         # index is 1, both points are good
-            #         else: 
-            #             argo_data["PSAL_ADJUSTED_QC"][i][j] = 1
-            #             argo_data["PSAL_QC"][i][j] = 1
-            #             argo_data["TEMP_ADJUSTED_QC"][i][j] = 1
-            #             argo_data["TEMP_QC"][i][j] = 1 
-            #     print("Finished setting TEMP_QC and PSAL_QC")
-
+                
             if sal_checked == True and temp_checked == True and pres_checked == True:
                 argo_data["QC_FLAG_CHECK"][i] == 1
 
@@ -368,7 +312,11 @@ def flag_data_points(argo_data, profile_num, data_type):
     elif (data_type == "PSAL") or (data_type == "TEMP"):
         var_arr = argo_data[f"{data_type}_ADJUSTED"][i]
         qc_arr = argo_data[f"{data_type}_ADJUSTED_QC"][i]
-        selected_points = flag_point_data_graphs(var_arr, pres_arr, data_type, qc_arr, profile_num, date)
+        if data_type == "PSAL":
+            selected_points = flag_point_data_graphs(var_arr, pres_arr, data_type, qc_arr, profile_num, date, argo_data)
+        else:
+            selected_points = flag_point_data_graphs(var_arr, pres_arr, data_type, qc_arr, profile_num, date)
+
     else:
         raise Exception("Invalid data_type")
 
@@ -511,7 +459,7 @@ def data_snapshot_graph(argo_data, profile_num):
     selected_points_temp = flag_point_data_graphs(temp_arr, pres_arr, "TEMP", temp_qc, argo_data["PROFILE_NUMS"][i], juld, ax=axs[0, 0], figure=fig)
 
     # Populate the top-right subplot
-    selected_points_psal = flag_point_data_graphs(sal_arr, pres_arr, "PSAL", psal_qc, argo_data["PROFILE_NUMS"][i], juld, ax=axs[0, 1], figure=fig)
+    selected_points_psal = flag_point_data_graphs(sal_arr, pres_arr, "PSAL", psal_qc, argo_data["PROFILE_NUMS"][i], juld, argodata=argo_data, ax=axs[0, 1], figure=fig)
 
     # Populate the bottom-left subplot
     flag_TS_data_graphs(sal_arr, temp_arr, juld, lon, lat, pres_arr, profile_num, temp_qc, psal_qc, ax=axs[1, 0])
@@ -530,15 +478,16 @@ def data_snapshot_graph(argo_data, profile_num):
         Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),    # Both bad
         Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),   # Salinity bad
         Line2D([0], [0], marker='o', color='w', markerfacecolor='aqua', markersize=10), # Temperature bad
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10)   # Good data
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10),   # Good data
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='white', markeredgecolor='fuchsia', markersize=9) 
     ]
 
     # Add legend with bbox_to_anchor to place it nicely at the bottom
     axs[1, 1].legend(
         custom_legend,
-        ["Bad", "Probably Bad", "Probably Good", "Good"],
+        ["Bad", "Probably Bad", "Probably Good", "Good", "Density Inversion"],
         loc='lower center',
-        bbox_to_anchor=(0.5, 0.1),
+        bbox_to_anchor=(0.5, 0),
         ncol=2,
         title="QC Data Quality Flags",
         frameon=False
@@ -716,11 +665,6 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
 
     # Get dir of generated NETCDF files
     argo_data = read_intermediate_nc_file(nc_filepath)
-
-    # CHECK 0: verify vals in [VAR]_QC arrs
-    # NOTE:
-    #  refer to argo_quality_control_manual: p.22
-    # argo_data = verify_autoset_qc_flags(argo_data)
     
     # CHECK 1: fill-in times and set QC flag to 8
     argo_data = juld_check(argo_data)
@@ -729,20 +673,21 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
     # NOTE: passing in JULDs bc if lat/lon is missing -> JULD_LOCATION is missing
     argo_data = lat_lon_check(argo_data)
 
-    # CHECK 3: Set QC flags where counts are too high/low
+    # CHECK 3: verify vals in [VAR]_QC arrs
+    # NOTE: refer to argo_quality_control_manual: p.22
+    argo_data = verify_autoset_qc_flags(argo_data)
+
+    # CHECK 4: Set QC flags where counts are too high/low
     argo_data = count_check(argo_data)
 
-    # Check 4: Set QC flags where PRES < 1m, 
+    # Check 5: Set QC flags where PRES < 1m, 
     argo_data  = pres_depth_check(argo_data)
 
-    # Check 5: Set TEMP QC flags where TEMP < -2 and where PRES < 0.1
+    # Check 6: Set TEMP QC flags where TEMP < -2 and where PRES < 0.1
     argo_data  = temp_check(argo_data)
 
-    # Check 6: Density Inversion Check
-    argo_data = density_inversion_test(argo_data)
-
     # Write results back to NETCDF file
-    # make_intermediate_nc_file(argo_data, dest_filepath, float_num)  
+    make_intermediate_nc_file(argo_data, dest_filepath, float_num)  
 
 def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
     """
@@ -762,9 +707,10 @@ def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
 
     # Flag individual data points
     #argo_data = flag_data_points(argo_data, profile_num, "PRES")
-    #argo_data = flag_data_points(argo_data, profile_num, "PSAL")
-    #argo_data = flag_data_points(argo_data, profile_num, "TEMP")
+    argo_data = flag_data_points(argo_data, profile_num, "PSAL")
+    argo_data = flag_data_points(argo_data, profile_num, "TEMP")
 
+   
     # Get rid of range of data
     # argo_data = flag_range_data(argo_data, profile_num, "PRES")
     argo_data = flag_range_data(argo_data, profile_num, "PSAL")
@@ -772,7 +718,7 @@ def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
 
     # TS diagram
     argo_data = flag_TS_data(argo_data, profile_num)
-    
+
     # Write results back to NETCDF file
     make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
 
@@ -837,23 +783,20 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
 
 
 def main():
-
-    #nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
-    #F9186_after_vi_old    F9186_after_visual_inspection_new
-    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_visual_inspection"
-
     float_num = "F9186"
-    #dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_after_visual_inspection"
-    # F9186_after_first_time_run_new
-    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_visual_inspection"
-    
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_0")
+    #nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_FTR")
+    dest_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_1_TESTS")
+
     if not os.path.exists(dest_filepath):
         os.mkdir(dest_filepath)
 
-    #first_time_run(nc_filepath, dest_filepath, float_num)
+    first_time_run(nc_filepath, dest_filepath, float_num)
 
-    profile_num = 244
-    #manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
+    raise Exception
+    # 101
+    profile_num = 176
+    manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
 
     qc_arr_selection = [0, 1, 2] # only want good/ prob good data 
     data_type = "PSAL"                 # either PSAL or TEMP
@@ -863,7 +806,9 @@ def main():
     If start date is specified with no end date: filters start date - end of profile data
     If both: start date - end date
     """
-    date_filter_start = "2020_09_13_00_00_00" 
+    date_filter_start = "2023_03_15_00_00_00" 
+    date_filter_end = "2023_04_20_00_00_00"
+    date_filter_start = None
     date_filter_end = None
     generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end)
 
