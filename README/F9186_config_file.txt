@@ -1,0 +1,30 @@
+Argo Float F9186 Configuration File for Delayed Mode File Generation 
+Please make sure all parameters are filled
+Reference table link: https://archimer.ifremer.fr/doc/00187/29825/ 
+Date of generation: 2025-04-08 10:46:06
+===========================================================================
+DATA_CENTRE = XX
+DATA_MODE = D
+DATA_STATE_INDICATOR = 2C
+DATA_TYPE = Argo profile
+DC_REFERENCE = 9999
+DIRECTION = A
+FIRMWARE_VERSION = 99999
+FLOAT_SERIAL_NO = 9186
+FORMAT_VERSION = 3.1
+HANDBOOK_VERSION = 1.2
+PI_NAME = JOSHUA K. WILLIS
+PLATFORM_NUMBER = 9186
+PLATFORM_TYPE = APEX
+POSITIONING_SYSTEM = GPS
+PROJECT_NAME = GOO, Argo equivalent  
+REFERENCE_DATE_TIME = 19500101000000
+STATION_PARAMETERS = PRES, TEMP, CNDC, PSAL, TEMP_CNDC, NB_SAMPLE_CTD
+PARAMETER = PRES, TEMP, CNDC, PSAL, TEMP_CNDC, NB_SAMPLE_CTD
+VERTICAL_SAMPLING_SCHEME = Primary sampling: averaged
+WMO_INST_TYPE = 877
+===========================ADJUSTED_ERROR_PAREMS===========================
+CNDC_ADJUSTED_ERROR = 0
+PRES_ADJUSTED_ERROR = 0
+PSAL_ADJUSTED_ERROR = 0
+TEMP_ADJUSTED_ERROR = 0
