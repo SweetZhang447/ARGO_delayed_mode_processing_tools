@@ -246,7 +246,7 @@ def redundent(argo_data, prof_num):
 
     return argo_data
 
-def verify_autoset_qc_flags(argo_data):
+def verify_autoset_qc_flags_and_density_inversions(argo_data):
     """
     Pops up series of graphs if there are preset {PARAM}_QC values so delayed mode operator can verify their correctness.
 
@@ -278,7 +278,7 @@ def verify_autoset_qc_flags(argo_data):
                 sal_checked = True
                 temp_checked = True
                 pres_checked = True
-                
+
             if sal_checked == True and temp_checked == True and pres_checked == True:
                 argo_data["QC_FLAG_CHECK"][i] == 1
 
@@ -675,7 +675,7 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
 
     # CHECK 3: verify vals in [VAR]_QC arrs
     # NOTE: refer to argo_quality_control_manual: p.22
-    argo_data = verify_autoset_qc_flags(argo_data)
+    argo_data = verify_autoset_qc_flags_and_density_inversions(argo_data)
 
     # CHECK 4: Set QC flags where counts are too high/low
     argo_data = count_check(argo_data)
@@ -720,7 +720,7 @@ def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
     argo_data = flag_TS_data(argo_data, profile_num)
 
     # Write results back to NETCDF file
-    make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
+    # make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
 
 def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end):
     """
@@ -784,20 +784,19 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
 
 def main():
     float_num = "F9186"
-    nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_0")
-    #nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_FTR")
+    #nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_0")
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_FTR")
     dest_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_1_TESTS")
 
     if not os.path.exists(dest_filepath):
         os.mkdir(dest_filepath)
 
-    first_time_run(nc_filepath, dest_filepath, float_num)
+    #first_time_run(nc_filepath, dest_filepath, float_num)
 
-    raise Exception
     # 101
     profile_num = 176
     manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
-
+    raise Exception
     qc_arr_selection = [0, 1, 2] # only want good/ prob good data 
     data_type = "PSAL"                 # either PSAL or TEMP
     use_adjusted = True                

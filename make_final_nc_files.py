@@ -8,6 +8,7 @@ import os
 import numpy.ma as ma
 import re
 import gsw 
+from pathlib import Path
 
 def masked_byte_array_to_str(masked_array):
     """
@@ -1335,7 +1336,7 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         make_final_nc_files(final_nc_data_prof, float_num, dest_filepath)
 
 def main():
-
+    """
     float_num = "1902655"
     #float_num = "F10051"
     dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\Ascending\\F10051_final_A"
@@ -1344,11 +1345,11 @@ def main():
     config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\ARGO_GEN\\F10051_final\\F10051_config_file.txt"
     """
     float_num = "F9186"
-    dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_final"
+    dest_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_final")
     nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_visual_inspection_new"
-    config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_final\\F9186_config_file.txt"
+    config_fp = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_final\F9186_config_file.txt")
     orgargo_netcdf_filepath = None
-    """
+    
     if not os.path.exists(dest_filepath):
         os.mkdir(dest_filepath)
 
@@ -1357,8 +1358,8 @@ def main():
     to make delayed mode NETCDF file.
     """
     #make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = orgargo_netcdf_filepath)
-    #make_config_file(float_num, dest_filepath)
-
+    make_config_file(float_num, dest_filepath)
+    raise Exception
     process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = orgargo_netcdf_filepath)
 
 if __name__ == '__main__':

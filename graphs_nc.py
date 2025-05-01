@@ -10,7 +10,6 @@ import os
 import glob
 import mplcursors
 import copy
-import RBRargo3_celltm
 from tools import from_julian_day, read_intermediate_nc_file, to_julian_day
 from matplotlib.lines import Line2D
 import csv
