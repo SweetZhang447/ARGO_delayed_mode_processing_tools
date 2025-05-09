@@ -441,6 +441,7 @@ def data_snapshot_graph(argo_data, profile_num):
     Returns:
         dict: dictionary of ARGO delayed mode profile values
     """
+    from RBRargo3_celltm import RBRargo3_celltm
 
     i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
     sal_arr = argo_data["PSAL_ADJUSTED"][i]
@@ -507,7 +508,7 @@ def data_snapshot_graph(argo_data, profile_num):
         
     return argo_data
 
-def graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, date_indexes):
+def graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, filter_indexes):
     """
     Pops out graph of ALL pressures v data_type
 
@@ -518,7 +519,7 @@ def graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_s
         float_num (str): Float number
         qc_arr_selection (list, int): list of ints to filter QC arrs 
             ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
-        date_indexes (list, int): list of profile indices that correspond with date filter
+        filter_indexes (list, int): list of profile indices that correspond with date filter or prof num filter
 
     Returns:
         Numpy arr of ints: user clicked profile numbers to look at in more detail
@@ -544,17 +545,17 @@ def graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_s
     julds = argo_data["JULDs"]
     profs = argo_data["PROFILE_NUMS"]
 
-    if date_indexes is not None:
-        pres = pres[date_indexes]
-        var = var [date_indexes]
-        julds = julds[date_indexes]
-        profs = profs[date_indexes]
+    if filter_indexes is not None:
+        pres = pres[filter_indexes]
+        var = var [filter_indexes]
+        julds = julds[filter_indexes]
+        profs = profs[filter_indexes]
  
     selected_profiles = pres_v_var_all(pres, var, julds, profs, data_type, float_num)
 
     return selected_profiles
 
-def graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, date_indexes):
+def graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, filter_indexes):
     """
     Pops out deep section graph of data_type.
 
@@ -565,7 +566,7 @@ def graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc
         float_num (str): Float number
         qc_arr_selection (list, int): list of ints to filter QC arrs 
             ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
-        date_indexes (list, int): list of profile indices that correspond with date filter
+        filter_indexes (list, int): list of profile indices that correspond with date filter or prof num filter
     """
     assert data_type == "PSAL" or data_type == "TEMP"
 
@@ -588,14 +589,14 @@ def graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc
 
     julds = argo_data["JULDs"]
 
-    if date_indexes is not None:
-        pres = pres[date_indexes]
-        var = var [date_indexes]
-        julds = julds[date_indexes]
+    if filter_indexes is not None:
+        pres = pres[filter_indexes]
+        var = var [filter_indexes]
+        julds = julds[filter_indexes]
 
     deep_section_var_all(pres, julds, var, float_num, data_type)
 
-def graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, date_indexes):
+def graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, filter_indexes):
     """
     Pops out TS graph for all data. 
 
@@ -605,7 +606,7 @@ def graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, date_inde
         float_num (str): Float number
         qc_arr_selection (list, int): list of ints to filter QC arrs 
             ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
-        date_indexes (list, int): list of profile indices that correspond with date filter
+        filter_indexes (list, int): list of profile indices that correspond with date filter or prof num filter
 
     Returns:
         Numpy arr of ints: user clicked profile numbers to look at in more detail
@@ -639,14 +640,14 @@ def graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, date_inde
     lats = argo_data["LATs"]
     profs = argo_data["PROFILE_NUMS"]
         
-    if date_indexes is not None:
-        psal = psal[date_indexes]
-        temp = temp[date_indexes]
-        pres = pres[date_indexes]
-        julds = julds[date_indexes]
-        lons = lons[date_indexes]
-        lats = lats[date_indexes]
-        profs = profs[date_indexes]
+    if filter_indexes is not None:
+        psal = psal[filter_indexes]
+        temp = temp[filter_indexes]
+        pres = pres[filter_indexes]
+        julds = julds[filter_indexes]
+        lons = lons[filter_indexes]
+        lats = lats[filter_indexes]
+        profs = profs[filter_indexes]
 
     selected_profiles = TS_graph_single_dataset_all_profile(psal, temp, julds, lons, lats, pres, profs, float_num)
     
@@ -707,8 +708,8 @@ def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
 
     # Flag individual data points
     #argo_data = flag_data_points(argo_data, profile_num, "PRES")
-    argo_data = flag_data_points(argo_data, profile_num, "PSAL")
-    argo_data = flag_data_points(argo_data, profile_num, "TEMP")
+    #argo_data = flag_data_points(argo_data, profile_num, "PSAL")
+    #argo_data = flag_data_points(argo_data, profile_num, "TEMP")
 
    
     # Get rid of range of data
@@ -717,12 +718,12 @@ def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
     argo_data = flag_range_data(argo_data, profile_num, "TEMP")
 
     # TS diagram
-    argo_data = flag_TS_data(argo_data, profile_num)
+    #argo_data = flag_TS_data(argo_data, profile_num)
 
     # Write results back to NETCDF file
-    # make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
+    make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
 
-def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end):
+def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end, prof_num_filter):
     """
     Pops out graphs to look at complete dataset. 
 
@@ -743,13 +744,13 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
     if date_filter_start is not None and date_filter_end is None:
         # We'll grab data from the start date to end of profile data
         date_filter_start_juld = to_julian_day(datetime.strptime(date_filter_start, "%Y_%m_%d_%H_%M_%S"))
-        date_filter_indexes = np.where(argo_data["JULDs"] > date_filter_start_juld)[0]
+        indexes = np.where(argo_data["JULDs"] > date_filter_start_juld)[0]
 
     elif date_filter_start is not None and date_filter_end is not None:
         # We'll grab data from the start - end date 
         date_filter_start_juld = to_julian_day(datetime.strptime(date_filter_start, "%Y_%m_%d_%H_%M_%S"))
         date_filter_end_juld = to_julian_day(datetime.strptime(date_filter_end, "%Y_%m_%d_%H_%M_%S"))
-        date_filter_indexes = np.where(
+        indexes = np.where(
             (argo_data["JULDs"] > date_filter_start_juld) &
             (argo_data["JULDs"] < date_filter_end_juld))[0]
 
@@ -757,12 +758,19 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
         print("Please specify start date if end date is specified")
         return
     else:
-        date_filter_indexes = None
-        print("Generating graph of all dates")
+        if prof_num_filter is not None:
+            prof_filter_split = prof_num_filter.split("-")
+            indexes = np.where(
+                (argo_data["PROFILE_NUMS"] >= int(prof_filter_split[0])) &
+                (argo_data["PROFILE_NUMS"] <= int(prof_filter_split[1])))
+        else:
+            indexes = None
+            print("Generating graph of all dates")
+        
 
-    selected_profiles_1 = graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, date_filter_indexes)
-    selected_profiles_2 = graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, date_filter_indexes)
-    graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, date_filter_indexes)
+    selected_profiles_1 = graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, indexes)
+    selected_profiles_2 = graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, indexes)
+    graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, indexes)
 
     # determine selected profiles based on returns of previous functions
     if selected_profiles_1 is not None and selected_profiles_2 is not None:
@@ -784,33 +792,32 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
 
 def main():
     float_num = "F9186"
-    #nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_0")
-    nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_FTR")
-    dest_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_1_TESTS")
+    # nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_0")
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_VI")
+    dest_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_VI")
 
     if not os.path.exists(dest_filepath):
         os.mkdir(dest_filepath)
 
     #first_time_run(nc_filepath, dest_filepath, float_num)
-
+    
     # 101
-    profile_num = 176
-    manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
-    raise Exception
+    profile_num = 260
+    #manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
+    
     qc_arr_selection = [0, 1, 2] # only want good/ prob good data 
-    data_type = "PSAL"                 # either PSAL or TEMP
-    use_adjusted = True                
+    data_type = "TEMP"                 # either PSAL or TEMP
+    use_adjusted = True    
+    # FORMAT: NUM-NUM, inclusive, specify either prof num filter or date filter
+    prof_num_filter = None        
     # FORMAT: YYYY_MM_DD_HH_MM_SS
-    """
-    If start date is specified with no end date: filters start date - end of profile data
-    If both: start date - end date
-    """
-    date_filter_start = "2023_03_15_00_00_00" 
-    date_filter_end = "2023_04_20_00_00_00"
-    date_filter_start = None
+    # If start date is specified with no end date: filters start date - end of profile data
+    # If both: start date - end date
+    date_filter_start = "2021_04_28_00_00_00"
+    date_filter_end = "2021_06_17_00_00_00"
+    date_filter_start = None 
     date_filter_end = None
-    generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end)
-
+    generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end, prof_num_filter)
 
 if __name__ == '__main__':
  
