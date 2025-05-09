@@ -1,8 +1,8 @@
 # ARGO Delayed Mode Processing Tools
 This repository provides a set of Python-based tools for the delayed mode processing of ARGO float data.
-Below includes instructions for various scripts needed to run the pipeline, in order. 
+Below includes instructions for various scripts needed to run the pipeline, in order. Please specify/ change needed params 
+in the "main" function of each file. 
 
-DRAFT VERSION 4/17/2025
 Please email me at xuanqin.zhang@sjsu.edu if you have any questions or comments!
 
 ## make_origin_nc_files.py
@@ -89,18 +89,19 @@ data_type                  | Either "PSAL" or "TEMP"
 use_adjusted               | True if you want to use PARAM_ADJUSTED data and associated PARAM_ADJUSTED_QC arrays, otherwise false
 date_filter_start          | Format: "YYYY_MM_DD_HH_MM_SS" or None, ability to filter for a date range for dataset graphs, if date_filter_start is specified and date_filter_end is "None", range will be from start date - end of profile data
 date_filter_end            | Format: "YYYY_MM_DD_HH_MM_SS" or None
+prof_num_filter            | Format: "PROFNUM_PROFNUM"; EX: "5-7" will get you profiles 5-7. Specify either prof num filter or date filter! 
 
 1. graph_pres_v_var_all()
    - Generates a PRES v DATA_TYPE graph for all profiles
    - Ability to click and select profiles of interest
-   - Ability to filter by date range
+   - Ability to filter by date range and prof num
 2. graph_TS_all
    - Generates a TS graph for all profiles
    - Ability to click and select profiles of interest
-   - Ability to filter by date range
+   - Ability to filter by date range and prof num
 3. graph_deep_section_var_all
    - Generates a DEEP SECTION graph for all profiles
-   - Ability to filter by date range
+   - Ability to filter by date range and prof num
 
 After exiting out of the aforementioned graphs, selected profiles of interest will pop out a data_snapshot_graph, and flag_range_data_graph for TEMP and PSAL where you can manipulate QC flags
 
