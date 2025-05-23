@@ -39,6 +39,7 @@ Steps and checks are outlined below:
    - Checks for missing JULD data values
    - If JULD_LOCATION is available, then fill in JULD with that value, set JULD_QC to 5 to indicate changed value
    - If both are missing, then interpolate values for JULD and set JULD_QC to 8 to indicate interpolated value
+     - Sets JULD_LOCATION with interpolated JULD value
 2. lat_lon_check()
    - Checks for missing LAT/ LON values
    - If missing, then interpolates LAT/LON and sets POSITION_QC to 8
