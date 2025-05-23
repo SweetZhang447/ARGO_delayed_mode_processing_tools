@@ -58,7 +58,7 @@ def make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = None):
         if org_argo_netcdf_filepath is None:
             txt_file.write("DATA_CENTRE = None\n")
             txt_file.write("DATA_MODE = None\n")
-            txt_file.write("DATA_STATE_INDICATOR = None\n")
+            txt_file.write("DATA_STATE_INDICATOR= None\n")
             txt_file.write("DATA_TYPE = None\n")
             txt_file.write("DC_REFERENCE = None\n")
             txt_file.write("DIRECTION = None\n")
@@ -248,7 +248,7 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
 
 
     output_filename = os.path.join(dest_filepath, f"D{float_num}_{final_nc_data_prof["CYCLE_NUMBER"]:03}.nc")
-    nc = nc4.Dataset(output_filename, 'w', format="NETCDF4")
+    nc = nc4.Dataset(output_filename, 'w', format="NETCDF3_CLASSIC")
 
     # Create dimensions
     nc.createDimension('DATE_TIME', 14)
@@ -265,6 +265,15 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     nc.createDimension('N_HISTORY', None)
     nc.createDimension('N_CALIB', final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"].shape[0])
 
+    # Global Attributes
+    nc.user_manual_version = "3.9"
+    nc.institution = 'AOML'
+    nc.Conventions = "Argo-3.9 CF-1.6"
+    nc.title = "Argo float vertical profile"
+    nc.featureType = "trajectoryProfile"
+    nc.source = 'Argo float'
+    nc.history = f"created: {str(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}"
+    
     CNDC = nc.createVariable('CNDC', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
     CNDC.long_name = "Electrical conductivity"
     CNDC.standard_name = "sea_water_electrical_conductivity"
@@ -328,8 +337,8 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     DATA_STATE_INDICATOR = nc.createVariable('DATA_STATE_INDICATOR', 'S1', ('N_PROF', 'STRING4'), fill_value=" ")
     DATA_STATE_INDICATOR.long_name = "Degree of processing the data have passed through"
     DATA_STATE_INDICATOR.conventions = "Argo reference table 6"
-    DATA_STATE_INDICATOR[:] = list('  2B')
-
+    DATA_STATE_INDICATOR[:] = np.array(np.pad(list(final_nc_data_prof["DATA_STATE_INDICATOR"]), (0, 4 - len(final_nc_data_prof["DATA_STATE_INDICATOR"])), mode='constant', constant_values=' '), dtype='S1')
+    
     DATA_TYPE = nc.createVariable('DATA_TYPE', 'S1', ('STRING16'), fill_value=" ")
     DATA_TYPE.long_name = "Data type"
     DATA_TYPE.conventions = "Argo reference table 1"
@@ -430,7 +439,7 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     HISTORY_STOP_PRES.units = "decibar"
     HISTORY_STOP_PRES[:] = final_nc_data_prof["HISTORY_STOP_PRES"].astype('f4')
 
-    JULD = nc.createVariable('JULD', 'f8', ('N_PROF'), fill_value=99999.0)
+    JULD = nc.createVariable('JULD', 'f8', ('N_PROF'), fill_value=999999.0)
     JULD.long_name = "Julian day (UTC) of the station relative to REFERENCE_DATE_TIME"
     JULD.standard_name = "time"
     JULD.units = "days since 1950-01-01 00:00:00 UTC"
@@ -479,7 +488,7 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
 
     NB_SAMPLE_CTD_QC = nc.createVariable('NB_SAMPLE_CTD_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
     NB_SAMPLE_CTD_QC.long_name = "quality flag"
-    NB_SAMPLE_CTD_QC.convetions = "Argo reference table 2"
+    NB_SAMPLE_CTD_QC.conventions = "Argo reference table 2"
     NB_SAMPLE_CTD_QC[:] = final_nc_data_prof["NB_SAMPLE_CTD_QC"].astype('S1')
 
     PARAMETER = nc.createVariable('PARAMETER', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'STRING16'), fill_value=" ")
@@ -530,11 +539,14 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     PRES[:] = final_nc_data_prof["PRES"]
 
     PRES_ADJUSTED = nc.createVariable('PRES_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    PRES_ADJUSTED.long_name = "Contains the error on the adjusted values as determined by the delayed mode QC process"
+    PRES_ADJUSTED.standard_name = "sea_water_pressure"
+    PRES_ADJUSTED.long_name = "Sea water pressure, equals 0 at sea-level"
     PRES_ADJUSTED.units = "decibar"
     PRES_ADJUSTED.C_format = "%7.1f"
     PRES_ADJUSTED.FORTRAN_format = "F7.1"
     PRES_ADJUSTED.resolution = np.float32(-0.001001001)
+    PRES_ADJUSTED.valid_min = 0.0
+    PRES_ADJUSTED.valid_max = 12000.0
     PRES_ADJUSTED[:] = final_nc_data_prof["PRES_ADJUSTED"]
 
     PRES_ADJUSTED_ERROR = nc.createVariable('PRES_ADJUSTED_ERROR', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
@@ -561,7 +573,7 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     PROFILE_CNDC_QC[:] = final_nc_data_prof["PROFILE_CNDC_QC"]
 
     PROFILE_NB_SAMPLE_CTD_QC = nc.createVariable('PROFILE_NB_SAMPLE_CTD_QC', 'S1', ('N_PROF'), fill_value=" ")
-    PROFILE_NB_SAMPLE_CTD_QC.long_name = "Global quality flag of PROFILE_NB_SAMPLE_CTD_QC profile"
+    PROFILE_NB_SAMPLE_CTD_QC.long_name = "Global quality flag of NB_SAMPLE_CTD profile"
     PROFILE_NB_SAMPLE_CTD_QC.conventions = "Argo reference table 2a"
     PROFILE_NB_SAMPLE_CTD_QC[:] = final_nc_data_prof["PROFILE_NB_SAMPLE_CTD_QC"]
 
@@ -722,7 +734,7 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     VERTICAL_SAMPLING_SCHEME[:] = np.array(np.pad(list(final_nc_data_prof["VERTICAL_SAMPLING_SCHEME"]), (0, 256 - len(final_nc_data_prof["VERTICAL_SAMPLING_SCHEME"])), mode='constant', constant_values=' '), dtype='S1')
 
     WMO_INST_TYPE = nc.createVariable('WMO_INST_TYPE', 'S1', ('N_PROF', 'STRING4'), fill_value=" ")
-    WMO_INST_TYPE.long_name = "Type of float"
+    WMO_INST_TYPE.long_name = "Coded instrument type"
     WMO_INST_TYPE.conventions = "Argo reference table 8"
     WMO_INST_TYPE[:] = np.array(np.pad(list(final_nc_data_prof["WMO_INST_TYPE"]), (0, 4 - len(final_nc_data_prof["WMO_INST_TYPE"])), mode='constant', constant_values=' '), dtype='S1')
 
@@ -759,8 +771,6 @@ def format_argo_data(argo_data):
     Function to format ARGO data before delayed mode processing. 
     Procedures include:
         - for all QC arr's flip 0's to 1's
-        - Set to nan, where {PARAM_ADJUSTED_QC == 4} for all PARAM_ADJUSTED arrs
-
     Args:
         argo_data (dict): dictionary of all associated parameters needed to generate delayed mode file.
 
@@ -778,12 +788,6 @@ def format_argo_data(argo_data):
     argo_data["TEMP_ADJUSTED_QC"][argo_data["TEMP_ADJUSTED_QC"] == 0] = 1
     argo_data["TEMP_CNDC_QC"][argo_data["TEMP_CNDC_QC"] == 0] = 1
     argo_data["NB_SAMPLE_CTD_QC"][argo_data["NB_SAMPLE_CTD_QC"] == 0] = 1
-
-    # Set to nan, where {PARAM_ADJUSTED_QC == 4} 
-    argo_data["PRES_ADJUSTED"][argo_data["PRES_ADJUSTED_QC"] == 4] = np.nan
-    argo_data["PSAL_ADJUSTED"][argo_data["PSAL_ADJUSTED_QC"] == 4] = np.nan
-    argo_data["TEMP_ADJUSTED"][argo_data["TEMP_ADJUSTED_QC"] == 4] = np.nan
-    argo_data["CNDC_ADJUSTED"][argo_data["CNDC_ADJUSTED_QC"] == 4] = np.nan
 
     return argo_data
 
@@ -962,25 +966,14 @@ def set_sci_calib_parems(final_nc_data_prof, param_to_set, **kwargs):
     nb_sample_ctd = get_padded_array(kwargs, "nb_sample_ctd", param_to_set)
 
     if param_to_set == "SET_COEFFICIENT":
-        if final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] is None:
-            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
-        else:
-            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.concatenate([final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])[np.newaxis, ...]], axis=0)
+        final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
+        
     if param_to_set == "SET_COMMENT":
-        if final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] is None:
-            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
-        else:
-            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.concatenate([final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])[np.newaxis, ...]], axis=0)
+        final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
     if param_to_set == "SET_EQUATION":
-        if final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] is None:
-            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
-        else:
-            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.concatenate([final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])[np.newaxis, ...]], axis=0)
+        final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
     if param_to_set == "SET_DATE":
-        if final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] is None:
-            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
-        else:
-            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] =  np.concatenate([final_nc_data_prof["SCIENTIFIC_CALIB_DATE"], np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])[np.newaxis, ...]], axis=0)
+        final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.stack([pres, temp, cndc, psal, temp_cndc, nb_sample_ctd])
     
     return final_nc_data_prof
 
@@ -1021,7 +1014,7 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         'CYCLE_NUMBER': 'noval',
         'DATA_CENTRE': 'noval',
         'DATA_MODE': 'noval',
-        'DATA_STATE_INDICTATOR': 'noval',
+        'DATA_STATE_INDICATOR': 'noval',
         'DATA_TYPE': 'noval',
         'DATE_CREATION': 'noval',
         'DATE_UPDATE': 'noval',
@@ -1106,7 +1099,7 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
             elif 'DATA_MODE' in line:
                 final_nc_data["DATA_MODE"] = param_val
             elif 'DATA_STATE_INDICATOR' in line:
-                final_nc_data["DATA_STATE_INDICTATOR"] = param_val
+                final_nc_data["DATA_STATE_INDICATOR"] = param_val
             elif 'DATA_TYPE' in line:
                 final_nc_data["DATA_TYPE"] = param_val
             elif 'DC_REFERENCE' in line:
@@ -1175,10 +1168,7 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["CYCLE_NUMBER"] = profile_num
         
         final_nc_data_prof["DATE_UPDATE"] = list(str(datetime.now().strftime("%Y%m%d%H%M%S")))
-        if org_netcdf_fp is None:
-            final_nc_data_prof["DATE_CREATION"] = list(str(datetime.now().strftime("%Y%m%d%H%M%S")))
-        else:
-            final_nc_data_prof["DATE_CREATION"] = np.squeeze(argo_org_file.variables["DATE_CREATION"][:].filled(argo_org_file.variables["DATE_CREATION"].getncattr("_FillValue")))
+        final_nc_data_prof["DATE_CREATION"] = list(str(datetime.now().strftime("%Y%m%d%H%M%S")))
 
         final_nc_data_prof["JULD"] = np.squeeze(processed_argo_data["JULDs"][i])
         final_nc_data_prof["JULD_LOCATION"] = np.squeeze(processed_argo_data["JULD_LOCATIONs"][i])
@@ -1221,18 +1211,10 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["PROFILE_TEMP_QC"] = calc_overall_profile_qc(np.squeeze(processed_argo_data["TEMP_ADJUSTED_QC"][i, :nan_index]))
 
         # Set scientific_calib parems
-        # Get org data if it exists 
-        if org_netcdf_fp is not None:
-            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = np.squeeze(np.char.decode(argo_org_file.variables["SCIENTIFIC_CALIB_COEFFICIENT"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_COEFFICIENT"].getncattr("_FillValue"))))
-            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = np.squeeze(np.char.decode(argo_org_file.variables["SCIENTIFIC_CALIB_COMMENT"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_COMMENT"].getncattr("_FillValue"))))
-            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = np.squeeze(np.char.decode(argo_org_file.variables["SCIENTIFIC_CALIB_DATE"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_DATE"].getncattr("_FillValue"))))
-            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = np.squeeze(np.char.decode(argo_org_file.variables["SCIENTIFIC_CALIB_EQUATION"][:].filled(argo_org_file.variables["SCIENTIFIC_CALIB_EQUATION"].getncattr("_FillValue"))))
-        
-        else:
-            final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = None
-            final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = None
-            final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = None
-            final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = None
+        final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"] = None
+        final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"] = None
+        final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = None
+        final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = None
 
         if processed_argo_data["PRES_OFFSET"][i][0] is not None:
             set_sci_calib_parems(final_nc_data_prof, "SET_COEFFICIENT", 
@@ -1245,7 +1227,12 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         set_sci_calib_parems(final_nc_data_prof, "SET_EQUATION",
                                 pres = f"PRES_ADJUSTED = PRES - surface_pressure")
         set_sci_calib_parems(final_nc_data_prof, "SET_DATE",
-                                pres = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}")
+                                pres = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
+                                temp = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
+                                cndc = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
+                                psal = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
+                                temp_cndc = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
+                                nb_sample_ctd = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}")
         
         # expand dim if it is incorrect
         if len(final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"].shape) == 2:
@@ -1320,19 +1307,22 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["CNDC_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
         final_nc_data_prof["CNDC_ADJUSTED_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
 
-        # 3.5.2 whereever PARAM_ADJUSTED_QC = 4, PARAM_ADJUSTED + PARAM_ADJUSTED_ERROR = FillVal!!
-        final_nc_data_prof["TEMP_ADJUSTED"][np.where(final_nc_data_prof["TEMP_ADJUSTED_QC"] == 4)] = np.nan
-        final_nc_data_prof["TEMP_ADJUSTED_ERROR"][np.where(final_nc_data_prof["TEMP_ADJUSTED_QC"] == 4)] = np.nan
+        # 3.5.2 where PARAM_ADJUSTED_QC = 4 or 9, PARAM_ADJUSTED + PARAM_ADJUSTED_ERROR = FillVal
+        pres_mask = (final_nc_data_prof["PRES_ADJUSTED_QC"] == 4) | (final_nc_data_prof["PRES_ADJUSTED_QC"] == 9)
+        final_nc_data_prof["PRES_ADJUSTED"][pres_mask] = 99999.0
+        final_nc_data_prof["PRES_ADJUSTED_ERROR"][pres_mask] = 99999.0
         
-        final_nc_data_prof["PRES_ADJUSTED"][np.where(final_nc_data_prof["PRES_ADJUSTED_QC"] == 4)] = np.nan
-        final_nc_data_prof["PRES_ADJUSTED_ERROR"][np.where(final_nc_data_prof["PRES_ADJUSTED_QC"] == 4)] = np.nan
+        psal_mask = (final_nc_data_prof["PSAL_ADJUSTED_QC"] == 4) | (final_nc_data_prof["PSAL_ADJUSTED_QC"] == 9)
+        final_nc_data_prof["PSAL_ADJUSTED"][psal_mask] = 99999.0
+        final_nc_data_prof["PSAL_ADJUSTED_ERROR"][psal_mask] = 99999.0
         
-        final_nc_data_prof["PSAL_ADJUSTED"][np.where(final_nc_data_prof["PSAL_ADJUSTED_QC"] == 4)] = np.nan
-        final_nc_data_prof["PSAL_ADJUSTED_ERROR"][np.where(final_nc_data_prof["PSAL_ADJUSTED_QC"] == 4)] = np.nan
+        temp_mask = (final_nc_data_prof["TEMP_ADJUSTED_QC"] == 4) | (final_nc_data_prof["TEMP_ADJUSTED_QC"] == 9)
+        final_nc_data_prof["TEMP_ADJUSTED"][temp_mask] = 99999.0
+        final_nc_data_prof["TEMP_ADJUSTED_ERROR"][temp_mask] = 99999.0
 
-        final_nc_data_prof["CNDC_ADJUSTED"][np.where(final_nc_data_prof["CNDC_ADJUSTED_QC"] == 4)] = np.nan
-        final_nc_data_prof["CNDC_ADJUSTED_ERROR"][np.where(final_nc_data_prof["CNDC_ADJUSTED_QC"] == 4)] = np.nan
-
+        cndc_mask = (final_nc_data_prof["CNDC_ADJUSTED_QC"] == 4) | (final_nc_data_prof["CNDC_ADJUSTED_QC"] == 9)
+        final_nc_data_prof["CNDC_ADJUSTED"][cndc_mask] = 99999.0
+        final_nc_data_prof["CNDC_ADJUSTED_ERROR"][cndc_mask] = 99999.0
         make_final_nc_files(final_nc_data_prof, float_num, dest_filepath)
 
 def main():
@@ -1342,12 +1332,12 @@ def main():
     dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\Ascending\\F10051_final_A"
     nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\Ascending\\F10051_FTR"
     orgargo_netcdf_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
-    config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\ARGO_GEN\\F10051_final\\F10051_config_file.txt"
+    config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\ARGO_GEN\\F10051_config_file.txt"
     """
     float_num = "F9186"
-    dest_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_final")
-    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_after_visual_inspection_new"
-    config_fp = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_final\F9186_config_file.txt")
+    dest_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_final_")
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_VI")
+    config_fp = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_config_file.txt")
     orgargo_netcdf_filepath = None
     
     if not os.path.exists(dest_filepath):
@@ -1358,8 +1348,8 @@ def main():
     to make delayed mode NETCDF file.
     """
     #make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = orgargo_netcdf_filepath)
-    make_config_file(float_num, dest_filepath)
-    raise Exception
+    #make_config_file(float_num, dest_filepath)
+
     process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = orgargo_netcdf_filepath)
 
 if __name__ == '__main__':

@@ -211,9 +211,23 @@ def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
                 JULD_timestamp = None
                 prev_line = None
                 BROKEN_CP_PTSCI_ASCENT_FLAG = False
+                BROKEN_PTSCI_DESCENT_FLAG = False
                 for row in reader:
+                    # commented out code pertains to "broken" float F10051, where we played around with taking PTSCI data from the descent
+                    # if(row[2] == "Park Descent Mission"):
+                    #     BROKEN_PTSCI_DESCENT_FLAG = True
+                    # if(row[2] == "Park Mission"):
+                    #     BROKEN_PTSCI_DESCENT_FLAG = False   
                     if(row[2] == "ASCENT"):
                         BROKEN_CP_PTSCI_ASCENT_FLAG = True
+                    # if broken_float == 1:
+                    #     if BROKEN_PTSCI_DESCENT_FLAG == True:
+                    #         if row[0] == 'LGR_PTSCI':
+                    #             # -99 to indicate no vals were avg for this measurement
+                    #             row.append(-99)
+                    #             PTSCIinfo.append(row)
+                    # if row[2] == "CP started":
+                    #     JULD_timestamp = row[1]
                     if broken_float == 1:
                         if BROKEN_CP_PTSCI_ASCENT_FLAG == True:
                             if row[0] == 'LGR_PTSCI':
@@ -476,15 +490,15 @@ def main():
 
     download_ARGO_NETCDF_files = 0
     dload_url = "https://data-argo.ifremer.fr/dac/aoml/1902655/profiles/"
-    read_ARGO_NETCDF_files = 1
-    read_RAW_CSV_files = 0
+    read_ARGO_NETCDF_files = 0
+    read_RAW_CSV_files = 1
 
     float_num= "F10051"
-    # F10051_bad_data_30_69        F10051_all_data
-    # input_dir = "C:\\Users\\szswe\\Desktop\\NOAA_pipeline\\F10051_data\\F10051_bad_data_30_69"
+    # F10051_bad_data_30_69        F10051_all_data_good
+    input_dir = "C:\\Users\\szswe\\Desktop\\NOAA_pipeline\\F10051_data\\F10051_bad_data_30_69"
     # dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F10051_0"
-    input_dir = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
-    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\F10051_0"
+    # input_dir = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
+    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\Ascending\\F10051_0"
     #input_dir = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F9186_raw_csv"
     #dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_0"
 

@@ -111,7 +111,6 @@ def juld_check(argo_data):
     """
 
     juld_mask = np.isnan(argo_data["JULDs"])
-
     # Step 1: Fill NaNs in JULDs with known values from JULD_LOCATIONs
     if len(np.where(juld_mask == True)[0]) > 0:
         argo_data["JULDs"][juld_mask] = argo_data["JULD_LOCATIONs"][juld_mask]
@@ -130,6 +129,12 @@ def juld_check(argo_data):
                 argo_data["JULDs"][valid_indices]
             )
             argo_data["JULD_QC"][interp_mask] = 8  # QC flag for interpolated values
+
+    # Fill in missing JULD_LOCATION values
+    interp_mask = np.isnan(argo_data["JULD_LOCATIONs"])
+    if np.any(interp_mask):
+        missing_indices = np.where(interp_mask)[0]
+        argo_data["JULD_LOCATIONs"][missing_indices] = argo_data["JULDs"][missing_indices]
     
     return argo_data
 
@@ -800,7 +805,7 @@ def main():
         os.mkdir(dest_filepath)
 
     #first_time_run(nc_filepath, dest_filepath, float_num)
-    
+
     # 101
     profile_num = 260
     #manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
@@ -808,7 +813,6 @@ def main():
     qc_arr_selection = [0, 1, 2] # only want good/ prob good data 
     data_type = "TEMP"                 # either PSAL or TEMP
     use_adjusted = True    
-    # FORMAT: NUM-NUM, inclusive, specify either prof num filter or date filter
     prof_num_filter = None        
     # FORMAT: YYYY_MM_DD_HH_MM_SS
     # If start date is specified with no end date: filters start date - end of profile data
