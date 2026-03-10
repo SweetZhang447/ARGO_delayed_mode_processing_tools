@@ -1,32 +1,49 @@
-import csv
-import glob
+"""
+delayed_mode_processing.py — QC processing pipeline and interactive flagging for ARGO float data.
+
+This is the core delayed-mode processing script. It reads intermediate netCDF files
+produced by make_origin_nc_files.py, runs automated QC checks, provides interactive
+matplotlib-based visualization and flagging tools, and writes the results back to
+the intermediate netCDF format.
+
+Three main entry-point functions (called from main):
+  first_time_run()          — Run once immediately after make_origin_nc_files.py
+  manipulate_data_flags()   — Interactive QC flagging for a single profile
+  generate_dataset_graphs() — Dataset-wide graphing and batch flagging workflow
+
+QC flag values: 0=no QC, 1=good, 2=prob good, 3=prob bad, 4=bad, 5=changed, 8=interpolated
+Julian days referenced to 1950-01-01 00:00:00 UTC.
+"""
 import os 
 from matplotlib import pyplot as plt
 import numpy as np
-from datetime import datetime, timedelta
-import itertools
-import netCDF4 as nc4
+from datetime import datetime
 import pandas as pd
-import copy
 from scipy.interpolate import interp1d
 from graphs_nc import TS_graph_single_dataset_all_profile, deep_section_var_all, density_inversion_test, flag_TS_data_graphs, flag_range_data_graphs, flag_point_data_graphs, pres_v_var_all
 from tools import from_julian_day, to_julian_day, read_intermediate_nc_file, make_intermediate_nc_file, del_all_nan_slices
 import gsw 
 from matplotlib.lines import Line2D
 from pathlib import Path
-from scipy import stats
 
 def interp_missing_lat_lons(lats, lons, dates):
     """
-    Interpolates missing lat/ lon vals
+    Interpolate missing (NaN) latitude and longitude values using linear interpolation.
 
-    Args:
-        lats (Numpy arr of floats): Lat values
-        lons (Numpy arr of floats): Lon values
-        dates (Numpy arr of floats): Date values in Julian date format
+    Uses non-NaN positions as anchor points and extrapolates to fill all NaN values.
+    Called by lat_lon_check() after detecting missing position data.
 
-    Returns:
-        Numpy arr: returns numpy arrs of filled in interpolated lat and lon vals
+    Parameters
+    ----------
+    lats, lons : ndarray (n_profiles,)
+        Latitude and longitude arrays; NaN where position is missing.
+    dates : ndarray (n_profiles,)
+        Julian day for each profile, used as the interpolation x-axis.
+
+    Returns
+    -------
+    lats, lons : ndarray (n_profiles,)
+        Arrays with NaN values filled by linear interpolation/extrapolation.
     """
 
     # Mask where values are not NaN
@@ -51,14 +68,20 @@ def interp_missing_lat_lons(lats, lons, dates):
 
 def interpolate_missing_julian_days(julian_days):
     """
-    NOT USED
-    returns arr of interpolated julian dates.
+    Interpolate missing (NaN) Julian day values. NOT USED in current pipeline.
 
-    Args:
-        julian_days (Numpy arr of floats): Date values in Julian date format
+    Converts Julian days to Gregorian dates via pandas, interpolates, then converts
+    back. NaN values at the edges are dropped.
 
-    Returns:
-        Numpy arr: interpolated julian dates
+    Parameters
+    ----------
+    julian_days : ndarray (n_profiles,)
+        Julian day array referenced to 1950-01-01; NaN where missing.
+
+    Returns
+    -------
+    julian_days : ndarray
+        Julian days with NaN values filled by linear interpolation.
     """
     # Convert Julian days to Gregorian dates
     gregorian_dates = [from_julian_day(jd) for jd in julian_days]
@@ -79,13 +102,20 @@ def interpolate_missing_julian_days(julian_days):
 
 def lat_lon_check(argo_data):
     """
-    Checks for missing LAT/LON vals, then interpolated missing vals, setting QC flag for interpolated values to 8.
+    Check for missing LAT/LON values and fill by interpolation.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
+    Detects NaN positions, calls interp_missing_lat_lons(), and sets POSITION_QC=8
+    for any profiles where position was interpolated.
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values with missing vals filled
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict from read_intermediate_nc_file().
+
+    Returns
+    -------
+    argo_data : dict
+        Same dict with LATs, LONs, and POSITION_QC updated.
     """
     
     location_mask = np.logical_or(np.isnan(argo_data["LATs"]), np.isnan(argo_data["LONs"]))
@@ -100,15 +130,22 @@ def lat_lon_check(argo_data):
 
 def juld_check(argo_data):
     """
-    Checks for missing values in JULDs. 
-    If missing, first see if JULD_LOCATION has associated value, if so fill in JULDs with said value, setting
-    QC flag to 5. If not, then interpolated missing value and sets QC flag to 8.
+    Check for missing JULD values and fill from JULD_LOCATION or by interpolation.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
+    For each profile with a missing JULD:
+      - If JULD_LOCATION is available: set JULD = JULD_LOCATION, JULD_QC = 5 (changed).
+      - Otherwise: interpolate JULD and set JULD_QC = 8 (interpolated).
+    Also fills missing JULD_LOCATION values from JULDs.
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values with missing vals filled
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict from read_intermediate_nc_file().
+
+    Returns
+    -------
+    argo_data : dict
+        Same dict with JULDs, JULD_LOCATIONs, and JULD_QC updated.
     """
 
     juld_mask = np.isnan(argo_data["JULDs"])
@@ -141,13 +178,20 @@ def juld_check(argo_data):
 
 def count_check(argo_data):
     """
-    Sets PSAL, CNDC, and TEMP ADJUSTED_QC arrays to 3 where NB_SAMPLE_CTD are > 300 or < 1
+    Flag profiles with suspicious sample counts as probably bad (QC=3).
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
+    Sets PSAL_ADJUSTED_QC and TEMP_ADJUSTED_QC to 3 where NB_SAMPLE_CTD > 100
+    or where 0 < NB_SAMPLE_CTD < 1 (but not -99, which indicates missing/N/A).
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values with {PARAM}_ADJUSTED_QC arrs set
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+
+    Returns
+    -------
+    argo_data : dict
+        Same dict with PSAL_ADJUSTED_QC and TEMP_ADJUSTED_QC updated.
     """
     count_mask = np.logical_or(argo_data["NB_SAMPLE_CTD"] > 100,  np.logical_and(argo_data["NB_SAMPLE_CTD"] < 1, argo_data["NB_SAMPLE_CTD"] != -99))
     argo_data["PSAL_ADJUSTED_QC"][count_mask] = 3
@@ -158,13 +202,21 @@ def count_check(argo_data):
 # NOTE: Use this for RBR inductive sensors to flag data too close to surface
 def pres_depth_check(argo_data):
     """
-    Checks if pressure is less than 1, if so fill PSAL and TEMP ADJUSTED_QC with 4 to indicate bad value.
+    Flag near-surface data as bad (QC=4) where sensors are unreliable.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
+    - Sets PSAL_ADJUSTED_QC = 4 where PRES_ADJUSTED < 1 dbar (RBR inductive cell
+      is unreliable near surface).
+    - Sets TEMP_ADJUSTED_QC = 4 where PRES_ADJUSTED < 0.1 dbar.
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values with {PARAM}_ADJUSTED_QC arrs set
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+
+    Returns
+    -------
+    argo_data : dict
+        Same dict with PSAL_ADJUSTED_QC and TEMP_ADJUSTED_QC updated.
     """
     pres_mask = np.where(argo_data["PRESs"] < 1)
     argo_data["PSAL_ADJUSTED_QC"][pres_mask] = 4
@@ -174,21 +226,48 @@ def pres_depth_check(argo_data):
 
 def temp_check(argo_data):
     """
-    Checks if pressure is less than 0.1, if so fill TEMP ADJUSTED QC with 4
-    Checks if TEMP < -2, if so it is ICE
+    Flag temperature values below -2°C as bad (QC=4).
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
+    Temperatures below -2°C in the Arctic typically indicate ice contamination
+    or sensor errors, not actual water temperature.
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values with {PARAM}_ADJUSTED_QC arrs set
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
 
+    Returns
+    -------
+    argo_data : dict
+        Same dict with TEMP_ADJUSTED_QC updated.
     """
     argo_data["TEMP_ADJUSTED_QC"][np.where(argo_data["TEMPs"] < -2)] = 4
 
     return argo_data
 
-def redundent(argo_data, prof_num):
+def density_inversion_single_prof(argo_data, prof_num):
+    """
+    Perform a density inversion test and flag inverted levels as bad (QC=4).
+
+    Converts PSAL to Absolute Salinity and TEMP to Conservative Temperature using
+    TEOS-10 (GSW), computes in-situ density, and detects levels where density
+    decreases with depth. Sets PSAL_ADJUSTED_QC and TEMP_ADJUSTED_QC to 4 for
+    both levels involved in each inversion.
+
+    NOTE: not used since first_time_run will already runs density inversion test
+
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+    prof_num : int
+        Profile number to test.
+
+    Returns
+    -------
+    argo_data : dict
+        Same dict with QC arrays updated for inverted levels.
+    """
 
     i =  np.where(argo_data["PROFILE_NUMS"] == prof_num)[0][0]
 
@@ -250,6 +329,19 @@ def redundent(argo_data, prof_num):
     return argo_data
 
 def save_datasnapshot_graphs(nc_filepath, save_dir):
+    """
+    Save data snapshot PNG graphs for all profiles in a directory.
+
+    Reads intermediate netCDF files, then calls data_snapshot_graph() for each
+    profile with save_dir set, which saves a PNG and closes the figure.
+
+    Parameters
+    ----------
+    nc_filepath : str
+        Directory of intermediate netCDF files.
+    save_dir : str
+        Directory where PNG files are saved.
+    """
     # Get dir of generated NETCDF files
     argo_data = read_intermediate_nc_file(nc_filepath)
 
@@ -258,13 +350,24 @@ def save_datasnapshot_graphs(nc_filepath, save_dir):
     
 def verify_autoset_qc_flags_and_density_inversions(argo_data):
     """
-    Pops up series of graphs if there are preset {PARAM}_QC values so delayed mode operator can verify their correctness.
+    Verify pre-existing QC flags and density inversions via interactive graphs.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
+    For each profile, runs density_inversion_test(). Pops up a data_snapshot_graph()
+    if the profile has any levels with TEMP_QC or PSAL_QC set to 3 or 4 (from
+    real-time ARGO files), or if any density inversions were found.
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values
+    This is called during first_time_run() so the analyst can review and accept or
+    correct the autoset flags before proceeding.
+
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+
+    Returns
+    -------
+    argo_data : dict
+        Same dict, potentially with QC flags modified by the user.
     """
 
     for i in np.arange(len(argo_data["PROFILE_NUMS"])):
@@ -284,19 +387,24 @@ def verify_autoset_qc_flags_and_density_inversions(argo_data):
 
 def flag_data_points(argo_data, profile_num, data_type):
     """
-    Flag data points in {PARAM}_ADJUSTED_QC arrays. Pops out graph pressure v data_type for users
-    to look at data and click through to change QC arr. 
+    Interactive point-by-point QC flagging for a single profile and variable.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
-        profile_num (int): profile number to look at
-        data_type (str): determine which data arr: PRES, PSAL, or TEMP to look at 
+    Calls flag_point_data_graphs() from graphs_nc.py and maps the returned color
+    list back to integer QC flags (red=4, orange=3, aqua=2, green=1).
 
-    Raises:
-        Exception: raise Exception if data_type is not PRES, PSAL or TEMP
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+    profile_num : int
+        Profile number to flag.
+    data_type : str
+        One of 'PRES', 'PSAL', or 'TEMP'.
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values
+    Returns
+    -------
+    argo_data : dict
+        Same dict with {data_type}_ADJUSTED_QC updated.
     """
 
     i =  np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
@@ -326,20 +434,28 @@ def flag_data_points(argo_data, profile_num, data_type):
 
 def flag_range_data(argo_data, profile_num, data_type, data_flag = None):
     """
-    Flag data ranges in {PARAM}_ADJUSTED_QC arrays. Pops out graph pressure v data_type for users
-    to look at data and click through to change QC arr. 
+    Interactive range-based QC flagging for a single profile and variable.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
-        profile_num (int): profile number to look at
-        data_type (str): determine which data arr: PRES, PSAL, or TEMP to look at 
-        data_flag (optional, int): if specified, sets QC arrays to data_flag, if not, default sets to 4
+    Calls flag_range_data_graphs() from graphs_nc.py and maps the returned color
+    list back to integer QC flags. If data_flag is provided, it overrides the
+    color-to-flag mapping (all changed points get data_flag).
 
-    Raises:
-        Exception: raise Exception if data_type is not PRES, PSAL or TEMP
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+    profile_num : int
+        Profile number to flag.
+    data_type : str
+        One of 'PRES', 'PSAL', or 'TEMP'.
+    data_flag : int, optional
+        If provided, forces all modified points to this QC value instead of
+        using the color-to-flag mapping. Defaults to 4 (bad) if not specified.
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values
+    Returns
+    -------
+    argo_data : dict
+        Same dict with {data_type}_ADJUSTED_QC updated.
     """
 
     i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
@@ -378,19 +494,23 @@ def flag_range_data(argo_data, profile_num, data_type, data_flag = None):
 
 def flag_TS_data(argo_data, profile_num):
     """
-    Flag data points in {PARAM}_ADJUSTED_QC arrays. Pops out TS graph for users
-    to look at data and click through to change QC arr. 
+    Interactive TS-diagram QC flagging for a single profile.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
-        profile_num (int): profile number to look at
-        data_type (str): determine which data arr: PRES, PSAL, or TEMP to look at 
+    Calls flag_TS_data_graphs() from graphs_nc.py. Maps the returned combined QC
+    state (1=both good, 2=temp bad, 3=sal bad, 4=both bad) to individual
+    TEMP_ADJUSTED_QC and PSAL_ADJUSTED_QC arrays.
 
-    Raises:
-        Exception: raise Exception if data_type is not PRES, PSAL or TEMP
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+    profile_num : int
+        Profile number to flag.
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values
+    Returns
+    -------
+    argo_data : dict
+        Same dict with PSAL_ADJUSTED_QC and TEMP_ADJUSTED_QC updated.
     """
 
     i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
@@ -430,14 +550,30 @@ def flag_TS_data(argo_data, profile_num):
 
 def data_snapshot_graph(argo_data, profile_num, save_dir = None):
     """
-    Pops out graphs to give user quick look at a profile.
+    Display (or save) a 2x2 data snapshot for a single profile.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
-        profile_num (int): profile number to look at
+    Layout: TEMP QC flagging (top-left), PSAL QC flagging (top-right),
+    TS diagram (bottom-left), profile info text (bottom-right).
 
-    Returns:
-        dict: dictionary of ARGO delayed mode profile values
+    If save_dir is None: displays interactively and returns updated QC arrays.
+    If save_dir is provided: saves a PNG to save_dir and closes the figure (no return).
+
+    When saving, points where NB_SAMPLE_CTD > 50 or QC=4 at the profile edges
+    are filtered out of the display.
+
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+    profile_num : int
+        Profile number to display.
+    save_dir : str, optional
+        If provided, saves figure as PNG here instead of showing interactively.
+
+    Returns
+    -------
+    argo_data : dict
+        Updated dict (only when save_dir is None; QC arrays may be modified).
     """
 
     i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
@@ -547,19 +683,30 @@ def data_snapshot_graph(argo_data, profile_num, save_dir = None):
 
 def graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, filter_indexes):
     """
-    Pops out graph of ALL pressures v data_type
+    Display an interactive pressure-vs-variable overview for all (or filtered) profiles.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
-        data_type (str): PSAL or TEMP
-        use_adjusted (bool): True to use {PARAM}_ADJUSTED arrs, otherwise uses {PARAM} arrs
-        float_num (str): Float number
-        qc_arr_selection (list, int): list of ints to filter QC arrs 
-            ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
-        filter_indexes (list, int): list of profile indices that correspond with date filter or prof num filter
+    Filters data by QC flag selection and optional profile index list, then calls
+    pres_v_var_all() from graphs_nc.py. Returns the set of profiles selected by user.
 
-    Returns:
-        Numpy arr of ints: user clicked profile numbers to look at in more detail
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+    data_type : str
+        'PSAL' or 'TEMP'.
+    use_adjusted : bool
+        If True, use PARAM_ADJUSTED arrays; otherwise use raw PARAM arrays.
+    float_num : str
+        Float identifier for the plot title.
+    qc_arr_selection : list of int
+        Only include depth levels with QC values in this list.
+    filter_indexes : list of int or None
+        If provided, only display these profile indices. None = all profiles.
+
+    Returns
+    -------
+    selected_profiles : set or ndarray
+        Profile numbers clicked/selected by the user.
     """
 
     assert data_type == "PSAL" or data_type == "TEMP"
@@ -594,16 +741,25 @@ def graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_s
 
 def graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, filter_indexes):
     """
-    Pops out deep section graph of data_type.
+    Display a deep-section graph for all (or filtered) profiles.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
-        data_type (str): PSAL or TEMP
-        use_adjusted (bool): True to use {PARAM}_ADJUSTED arrs, otherwise uses {PARAM} arrs
-        float_num (str): Float number
-        qc_arr_selection (list, int): list of ints to filter QC arrs 
-            ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
-        filter_indexes (list, int): list of profile indices that correspond with date filter or prof num filter
+    Filters data by QC flag selection and optional profile index list, then calls
+    deep_section_var_all() from graphs_nc.py.
+
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+    data_type : str
+        'PSAL' or 'TEMP'.
+    use_adjusted : bool
+        If True, use PARAM_ADJUSTED arrays.
+    float_num : str
+        Float identifier for the plot title.
+    qc_arr_selection : list of int
+        Only include depth levels with QC values in this list.
+    filter_indexes : list of int or None
+        If provided, only display these profile indices. None = all profiles.
     """
     assert data_type == "PSAL" or data_type == "TEMP"
 
@@ -635,18 +791,28 @@ def graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc
 
 def graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, filter_indexes):
     """
-    Pops out TS graph for all data. 
+    Display an interactive TS diagram for all (or filtered) profiles.
 
-    Args:
-        argo_data (dict): dictionary of ARGO delayed mode profile values
-        use_adjusted (bool): True to use {PARAM}_ADJUSTED arrs, otherwise uses {PARAM} arrs
-        float_num (str): Float number
-        qc_arr_selection (list, int): list of ints to filter QC arrs 
-            ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
-        filter_indexes (list, int): list of profile indices that correspond with date filter or prof num filter
+    Filters data by QC flag selection and optional profile index list, then calls
+    TS_graph_single_dataset_all_profile() from graphs_nc.py. Returns selected profiles.
 
-    Returns:
-        Numpy arr of ints: user clicked profile numbers to look at in more detail
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict.
+    use_adjusted : bool
+        If True, use PARAM_ADJUSTED arrays.
+    float_num : str
+        Float identifier for the plot title.
+    qc_arr_selection : list of int
+        Only include depth levels with QC values in this list.
+    filter_indexes : list of int or None
+        If provided, only display these profile indices. None = all profiles.
+
+    Returns
+    -------
+    selected_profiles : set or ndarray
+        Profile numbers clicked/selected by the user.
     """
 
     pres = argo_data["PRES_ADJUSTED"]
@@ -692,13 +858,27 @@ def graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, filter_in
    
 def first_time_run(nc_filepath, dest_filepath, float_num):
     """
-    First module to run when doing delayed mode processing. Please see functions and
-    associated comments for complete list of all checks done to data.
+    Run the full automated QC pipeline on a newly generated set of intermediate files.
 
-    Args:
-        nc_filepath (str): filepath to netcdf files
-        dest_filepath (str): filepath to save netcdf files to after processing
-        float_num (str): float number
+    Must be called once after make_origin_nc_files.py has generated the intermediate
+    netCDF files. Sequentially runs:
+      1. juld_check()
+      2. lat_lon_check()
+      3. verify_autoset_qc_flags_and_density_inversions()
+      4. count_check()
+      5. pres_depth_check()
+      6. temp_check()
+
+    Then writes results back to disk via make_intermediate_nc_file().
+
+    Parameters
+    ----------
+    nc_filepath : str
+        Input directory of intermediate netCDF files.
+    dest_filepath : str
+        Output directory where updated files are written.
+    float_num : str
+        Float identifier (e.g. 'F9186').
     """
 
     # Get dir of generated NETCDF files
@@ -729,13 +909,21 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
 
 def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
     """
-    Function to look at profile in more detail and flag bad points.
+    Interactive QC flagging session for a single profile.
 
-    Args:
-        nc_filepath (str): filepath to netcdf files
-        dest_filepath (str): filepath to save netcdf files to after processing
-        float_num (str): float number
-        profile_num (int): profile number to look at
+    Reads intermediate netCDF files, displays a data_snapshot_graph, then shows
+    flag_range_data graphs for PSAL and TEMP. Writes the result back to disk.
+
+    Parameters
+    ----------
+    nc_filepath : str
+        Input directory of intermediate netCDF files.
+    dest_filepath : str
+        Output directory where updated files are written.
+    float_num : str
+        Float identifier (e.g. 'F9186').
+    profile_num : int
+        Profile number to inspect and flag.
     """
     
     # Get dir of generated NETCDF files
@@ -762,17 +950,38 @@ def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
 
 def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end, prof_num_filter):
     """
-    Pops out graphs to look at complete dataset. 
+    Dataset-wide interactive graphing and batch flagging workflow.
 
-    Args:
-        nc_filepath (str): filepath to netcdf files
-        dest_filepath (str): filepath to save netcdf files to after processing
-        float_num (str): Float number
-        qc_arr_selection (list, int): list of ints to filter QC arrs 
-            ex. [0, 1, 2] means we only want data that has an associated QC flag of 0, 1 or 2
-        data_type (str): PSAL or TEMP
-        use_adjusted (bool): True to use {PARAM}_ADJUSTED arrs, otherwise uses {PARAM} arrs
-        
+    Loads all intermediate netCDF files, optionally filters by date range or
+    profile number range, then shows:
+      1. graph_pres_v_var_all()
+      2. graph_TS_all()
+      3. graph_deep_section_var_all()
+
+    For each profile selected in steps 1 or 2, pops up a data_snapshot_graph
+    and flag_range_data for TEMP and PSAL. Saves updated files to dest_filepath.
+
+    Parameters
+    ----------
+    nc_filepath : str
+        Input directory of intermediate netCDF files.
+    dest_filepath : str
+        Output directory for updated files.
+    float_num : str
+        Float identifier (e.g. 'F9186').
+    qc_arr_selection : list of int
+        QC values to include in graphs (e.g. [0, 1, 2] for good/prob good).
+    data_type : str
+        'PSAL' or 'TEMP'.
+    use_adjusted : bool
+        If True, use PARAM_ADJUSTED arrays.
+    date_filter_start : str or None
+        Start date filter in format 'YYYY_MM_DD_HH_MM_SS'. None = no filter.
+    date_filter_end : str or None
+        End date filter in format 'YYYY_MM_DD_HH_MM_SS'. None = start to end of data.
+    prof_num_filter : str or None
+        Profile number range in format 'START-END' (e.g. '5-7'). None = no filter.
+        Mutually exclusive with date filters.
     """
     # Get dir of generated NETCDF files
     argo_data = read_intermediate_nc_file(nc_filepath)

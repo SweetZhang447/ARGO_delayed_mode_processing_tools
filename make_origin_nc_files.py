@@ -1,3 +1,24 @@
+"""
+make_origin_nc_files.py — Ingestion layer: convert raw float data or real-time ARGO netCDF to intermediate format.
+
+This is the first step in the DMODE pipeline. It reads either:
+  a) Raw float science_log.csv + system_log.txt files from RBR-equipped floats, or
+  b) Real-time ARGO netCDF profile files downloaded from the ARGO data center.
+
+All output is written in the intermediate netCDF format defined in tools.py, with one
+.nc file per profile, named {float_num}-{profile_num:03}.nc.
+
+Usage: configure the flags in main() and run this script directly.
+
+Control flags in main()
+-----------------------
+download_ARGO_NETCDF_files : int (0 or 1)
+    1 = download real-time ARGO netCDF files from dload_url before processing.
+read_ARGO_NETCDF_files : int (0 or 1)
+    1 = read and convert real-time ARGO netCDF files from input_dir.
+read_RAW_CSV_files : int (0 or 1)
+    1 = read and convert raw RBR float CSV/TXT log files from input_dir.
+"""
 import csv
 import glob
 import os 
@@ -10,17 +31,44 @@ from concurrent.futures import ProcessPoolExecutor
 import requests
 from pathlib import Path
 import copy
-from scipy import stats
-import gsw
-
 
 def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, counts,
                         PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED,
                         latitude, longitude, juld_timestamp, juld_location, dest_filepath, float_num,
                         **kwargs):
     """
-    Makes a set of intermediate NETCDF files from parsed ARGO data, designed to be fed into "delayed_mode_processing" pipeline.
-    kwargs values initialized as np arr of 0's if not passed in.
+    Write one intermediate netCDF file for a single profile.
+
+    Creates a file at dest_filepath/{float_num}-{profile_num:03}.nc with the
+    standard intermediate netCDF dimensions (records, single_record) and all
+    required variables. Any QC arrays not provided via kwargs are initialized to
+    arrays of zeros (no QC applied).
+
+    Parameters
+    ----------
+    profile_num : int
+        Profile number, used in the filename and stored as PROFILE_NUM.
+    pressures, temps, sals, cndc, temp_cndc : array-like
+        Raw sensor data arrays (depth levels).
+    counts : array-like
+        NB_SAMPLE_CTD bin-average sample counts per depth level.
+    PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED : array-like
+        Adjusted data arrays (same shape as raw; PRES_ADJUSTED = PRES - surface offset).
+    latitude, longitude : float
+        Profile position.
+    juld_timestamp : float
+        Julian day of the profile (1950-01-01 reference).
+    juld_location : float
+        Julian day of the GPS position fix.
+    dest_filepath : str
+        Output directory.
+    float_num : str
+        Float identifier (e.g. 'F9186').
+    **kwargs : optional
+        QC and metadata arrays to include. If not provided, initialized to zeros:
+        PRES_QC, TEMP_QC, PSAL_QC, CNDC_QC, TEMP_CNDC_QC, NB_SAMPLE_CTD_QC,
+        PSAL_ADJUSTED_QC, TEMP_ADJUSTED_QC, PRES_ADJUSTED_QC, POSITION_QC,
+        JULD_QC, PRES_OFFSET, PTSCI_TIMESTAMPS.
     """
 
     output_filename = os.path.join(dest_filepath, f"{float_num}-{profile_num:03}.nc")
@@ -155,22 +203,25 @@ def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, co
 
 def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
     """
-    Generates a set of intermediate files from .csv type profile files,
-    and their associated .txt system log files.
+    Parse raw RBR float CSV/TXT log files and write intermediate netCDF files.
 
-    Pressure offset is read from .txt system log files
-    PRES_ADJUSTED = ORG_PRES - OFFSET
+    Reads paired science_log.csv (LGR_CP_PTSCI rows with PRES, TEMP, SAL, CNDC,
+    TEMP_CNDC, COUNT) and system_log.txt (GPS timestamp, surface pressure offset)
+    files for each profile. Data is reversed to match ARGO convention (increasing
+    pressure). Calls make_nc_file_origin() for each profile.
 
-    Args:
-        input_filepath (str): local filepath to .csv and .txt file data 
-        dest_filepath (str): local directory filepath to store generated files 
-        float_num (str): the argo internal float number, used to name the files downloaded
-        broken_float (int): 
-            1: indicates broken float, LGR_CP_PTSCI is missing data, so it 
-               reads LGR_PTSCI data from different place
-            0: Appends LGR_CP_PTSCI data as normal 
-    Raises:
-        Exception: if broken_float is either 0/1, raises exception
+    Parameters
+    ----------
+    input_filepath : str
+        Directory containing science_log.csv and system_log.txt files.
+    dest_filepath : str
+        Output directory for intermediate netCDF files.
+    float_num : str
+        Float identifier (e.g. 'F9186').
+    broken_float : int
+        0 = read from standard LGR_CP_PTSCI records (normal floats).
+        1 = read from LGR_PTSCI records (fallback for floats with logging issues).
+        Raises Exception if any other value is passed.
     """
     
     all_files = (p.resolve() for p in Path(input_filepath).glob("*") if p.name.endswith("system_log.txt") or p.name.endswith("science_log.csv"))
@@ -345,13 +396,21 @@ def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
 
 def read_argo_nc_files(nc_filepath, dest_filepath, float_num):
     """
-    Generates a set of intermediate files from original real-time ARGO files,
-    designed to be fed into delayed_mode_processing pipeline
+    Read real-time ARGO netCDF profile files and write intermediate netCDF files.
 
-    Args:
-        nc_filepath (str): local filepath to a set of ARGO profile files 
-        dest_filepath (str): local directory filepath to store generated files 
-        float_num (str): the argo internal float number, used to name the files downloaded
+    Reads all *.nc files in nc_filepath, extracts standard ARGO variables (PRES,
+    TEMP, PSAL, CNDC, TEMP_CNDC, NB_SAMPLE_CTD, JULD, JULD_LOCATION, LAT, LON),
+    and pre-existing QC flags. QC arrays that are missing, single-valued, or empty
+    are defaulted to 0 (no QC). Calls make_nc_file_origin() for each profile.
+
+    Parameters
+    ----------
+    nc_filepath : str
+        Directory containing real-time ARGO *.nc profile files.
+    dest_filepath : str
+        Output directory for intermediate netCDF files.
+    float_num : str
+        Float identifier (e.g. '1902655').
     """
     
     nc_files = glob.glob(os.path.join(nc_filepath, "*.nc"))
@@ -447,12 +506,21 @@ def read_argo_nc_files(nc_filepath, dest_filepath, float_num):
 
 def download_files(url, download_dir, float_num):
     """
-    Downloads a set of float profile files from ARGO, uses multithreading for faster speed
+    Download all profile files for a float from an ARGO data center URL.
 
-    Args:
-        url (str): https link to float profiles directory 
-        download_dir (str): local directory to download the files into
-        float_num (str): the argo internal float number, used to name the files downloaded
+    Fetches the directory listing at url using BeautifulSoup, filters for links
+    containing the float number with R or D prefix, then downloads all matching
+    files in parallel using ProcessPoolExecutor.
+
+    Parameters
+    ----------
+    url : str
+        ARGO data center URL listing float profiles
+        (e.g. 'https://data-argo.ifremer.fr/dac/aoml/1902655/profiles/').
+    download_dir : str
+        Local directory where downloaded files are saved.
+    float_num : str or int
+        Float number used to filter links (e.g. '1902655').
     """
 
     # Get links
@@ -481,13 +549,20 @@ def download_files(url, download_dir, float_num):
     print("Finished Downloading Profiles")
 
 def download_file(dload_url, download_dir, float_num):
-    """ 
-    Downloads a set of float profile files from ARGO
+    """
+    Download a single file from a URL and save it to download_dir.
 
-    Args:
-        dload_url (str): https link to float profiles directory 
-        download_dir (str): local directory to download the files into
-        float_num (str): the argo internal float number, used to name the files downloaded
+    Used internally by download_files() via ProcessPoolExecutor. Checks for HTTP
+    200 status and writes the binary response content to disk.
+
+    Parameters
+    ----------
+    dload_url : str
+        Full URL of the file to download.
+    download_dir : str
+        Local directory where the file is saved.
+    float_num : str or int
+        Float number (used only in the print statement, not in the filename).
     """
 
     response = requests.get(dload_url, timeout=5)

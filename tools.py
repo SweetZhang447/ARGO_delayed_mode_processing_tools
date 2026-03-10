@@ -1,3 +1,26 @@
+"""
+tools.py — Core utilities shared across all DMODE pipeline scripts.
+
+Provides:
+  - Julian day conversions (referenced to 1950-01-01 00:00:00 UTC)
+  - Reading and writing the intermediate netCDF format used between pipeline stages
+  - Dataset-level cleanup (removing all-NaN profiles)
+
+This module is imported by delayed_mode_processing.py, make_origin_nc_files.py,
+make_final_nc_files.py, graphs_nc.py, drift_analysis.py, and drift_stuff_graphs.py.
+
+Intermediate netCDF format
+--------------------------
+Each profile is stored as a separate .nc file named {float_num}-{profile_num:03}.nc.
+Dimensions:
+  records       — number of depth levels (varies per profile; trailing NaNs stripped on write)
+  single_record — scalar profile-level metadata (JULD, LAT, LON, etc.)
+Key variables (records dim): PRES, TEMP, PSAL, CNDC, TEMP_CNDC, NB_SAMPLE_CTD,
+  *_ADJUSTED, *_QC, PTSCI_TIMESTAMPS
+Key variables (single_record dim): JULD, JULD_LOCATION, LAT, LON,
+  POSITION_QC, JULD_QC, PRES_OFFSET, PROFILE_NUM
+"""
+
 from datetime import datetime, timedelta, timezone
 import numpy as np
 import netCDF4 as nc4
@@ -6,6 +29,19 @@ import os
 import itertools
 
 def from_julian_day(julian_day):
+    """
+    Convert a Julian day (referenced to 1950-01-01 00:00:00 UTC) to a datetime object.
+
+    Parameters
+    ----------
+    julian_day : float
+        Days since 1950-01-01 00:00:00 UTC.
+
+    Returns
+    -------
+    datetime or float
+        Timezone-aware datetime (UTC) if julian_day is not NaN; NaN otherwise.
+    """
     julian_day = np.float64(julian_day)
 
     if not np.isnan(julian_day):
@@ -19,7 +55,19 @@ def from_julian_day(julian_day):
         return julian_day
 
 def to_julian_day(date_obj):
+    """
+    Convert a datetime object to a Julian day referenced to 1950-01-01 00:00:00 UTC.
 
+    Parameters
+    ----------
+    date_obj : datetime
+        The date/time to convert. If timezone-naive, assumed UTC.
+
+    Returns
+    -------
+    float
+        Days since 1950-01-01 00:00:00 UTC (fractional).
+    """
     if date_obj.tzinfo is None:
         date_obj = date_obj.replace(tzinfo=timezone.utc)
 
@@ -29,7 +77,25 @@ def to_julian_day(date_obj):
     return julian_day
 
 def del_all_nan_slices(argo_data):
-    
+    """
+    Remove profiles where PRES, TEMP, or PSAL ADJUSTED arrays are entirely NaN.
+
+    A profile is excluded if ALL depth levels are NaN in any of the three key
+    adjusted arrays. Modifies both 2D data arrays and 1D metadata arrays
+    (PROFILE_NUMS, LATs, LONs, JULDs) in place on the returned dict.
+
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict from read_intermediate_nc_file().
+        Must contain PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED (2D),
+        and PROFILE_NUMS, LATs, LONs, JULDs (1D).
+
+    Returns
+    -------
+    argo_data : dict
+        Same dict with all-NaN profiles removed from all arrays.
+    """
     pres_mask = np.isnan(argo_data["PRES_ADJUSTED"]).all(axis=1)
     temp_mask = np.isnan(argo_data["TEMP_ADJUSTED"]).all(axis=1)
     psal_mask = np.isnan(argo_data["PSAL_ADJUSTED"]).all(axis=1)
@@ -48,9 +114,34 @@ def del_all_nan_slices(argo_data):
 
     return argo_data
 
-def make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num = None):
+def make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num=None):
+    """
+    Write intermediate netCDF files from an argo_data dict.
+
+    Each profile is written to a separate file named {float_num}-{profile_num:03}.nc.
+    Trailing NaN levels (beyond the last valid PRES value) are stripped before writing.
+    Called by delayed_mode_processing.py after QC modifications.
+
+    Parameters
+    ----------
+    argo_data : dict
+        Intermediate netCDF data dict (from read_intermediate_nc_file() or manually built).
+        Must contain all standard keys: PRESs, TEMPs, PSALs, CNDCs, TEMP_CNDCs,
+        TEMP_CNDC_QC, PRES_OFFSET, NB_SAMPLE_CTD, NB_SAMPLE_CTD_QC, JULDs,
+        JULD_LOCATIONs, LATs, LONs, POSITION_QC, JULD_QC, PSAL_ADJUSTED,
+        PSAL_ADJUSTED_QC, TEMP_ADJUSTED, TEMP_ADJUSTED_QC, PRES_ADJUSTED,
+        PRES_ADJUSTED_QC, PSAL_QC, TEMP_QC, PRES_QC, CNDC_QC, PTSCI_TIMESTAMPS,
+        and PROFILE_NUMS.
+    dest_filepath : str
+        Output directory where .nc files are written.
+    float_num : str
+        Float identifier used in the output filename (e.g. 'F9186').
+    profile_num : int, optional
+        If provided, only write the file for this specific profile number.
+        If None (default), write files for all profiles in argo_data.
+    """
     # if profile_num is not none, it means we want to generate a NC file for only 1 profile
-    # in the dictionary of profiles 
+    # in the dictionary of profiles
     
     if profile_num is None:
         iterate_len_profile_nums = np.arange(len(argo_data["PROFILE_NUMS"]))
@@ -172,7 +263,31 @@ def make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num =
         nc.close()
 
 def read_intermediate_nc_file(filepath):
+    """
+    Read all intermediate netCDF files in a directory into a single argo_data dict.
 
+    Files are sorted and loaded in order. Profiles with fewer than 3 valid depth
+    levels in PRES, PSAL, or TEMP are skipped. Arrays with varying profile lengths
+    are padded to the longest profile using NaN (via itertools.zip_longest).
+
+    The returned dict uses plural/shortened key names (e.g., 'PRESs' for PRES,
+    'JULDs' for JULD). See module docstring for full key list.
+
+    Parameters
+    ----------
+    filepath : str
+        Directory containing intermediate .nc files (e.g., 'F9186-001.nc', ...).
+
+    Returns
+    -------
+    argo_data : dict
+        All profiles combined into 2D arrays (n_profiles, n_levels) for depth
+        variables and 1D arrays (n_profiles,) for profile-level scalars.
+        Key mapping (file variable → dict key):
+          PRES → PRESs, TEMP → TEMPs, PSAL → PSALs, CNDC → CNDCs,
+          TEMP_CNDC → TEMP_CNDCs, JULD → JULDs, JULD_LOCATION → JULD_LOCATIONs,
+          LAT → LATs, LON → LONs, PROFILE_NUM → PROFILE_NUMS (as int).
+    """
     # Define the keys for argo data
     argo_keys = [
         "CNDC", "CNDC_QC",

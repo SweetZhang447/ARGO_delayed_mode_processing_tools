@@ -1,14 +1,37 @@
+"""
+drift_analysis.py — Salinity drift analysis for ARGO floats.
+
+Compares Argo float salinity against independent reference datasets
+(ship CTDs, AXCTDs, bottle samples, GEM data, and nearby float profiles)
+to detect and quantify salinity drift over time.
+
+Two comparison methods are used:
+  1. Average PSAL at a fixed pressure range (e.g. 500–600 dbar)
+  2. PSAL interpolated to a target isotherm temperature (e.g. 2°C)
+
+Reference data readers (also available in read_ctds.py for ship CTD data):
+  read_ORP_WOOD_ctd, read_nicole_ctd, read_AXCTDs, read_regular_file,
+  read_corrected_gem_data, read_bottle_data, read_lorenze_ctd_data, read_2903449 (via read_ctds.py)
+
+Float-specific analysis functions:
+  generate_F9185_F9444_avg_PSAL / PSAL_at_TEMP
+  generate_F10052_avg_PSAL / PSAL_at_TEMP
+  F9444_avg_PSAL / PSAL_AT_TEMP / TS
+  F9443_avg_PSAL / PSAL_AT_TEMP / TS
+
+Helper utilities:
+  dm_to_decimal, filter_pres_levels, read_float_apply_qc,
+  filter_float_overlap_date_range, find_psal_at_temp, make_TS_plot
+
+All Julian days referenced to 1950-01-01 00:00:00 UTC.
+Hardcoded file paths reference C:\\Users\\szswe\\Desktop\\...
+"""
 from datetime import datetime, timedelta
-import glob
 import itertools
 import os
 from pathlib import Path
 import gsw
 from matplotlib.collections import LineCollection
-from matplotlib.dates import DateFormatter
-from mpl_toolkits.basemap import Basemap
-from geopy import distance
-
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
@@ -16,18 +39,49 @@ import pandas as pd
 from scipy import stats
 from delayed_mode_processing import interpolate_missing_julian_days
 from tools import from_julian_day, read_intermediate_nc_file, to_julian_day
-import netCDF4 as nc4
 
 ######## HELPER FUNCTIONS ########
 # Convert degrees + minutes to decimal degrees
 def dm_to_decimal(deg, minutes, hemisphere):
+    """
+    Convert degrees and decimal minutes to decimal degrees.
+
+    Parameters
+    ----------
+    deg : float
+        Degrees component.
+    minutes : float
+        Decimal minutes component.
+    hemisphere : str
+        'N', 'S', 'E', or 'W'. South and West are returned as negative values.
+
+    Returns
+    -------
+    float
+        Decimal degrees (negative for S/W).
+    """
     decimal = deg + minutes / 60.0
     if hemisphere in ("S", "W"):
         decimal *= -1
     return decimal
 def filter_pres_levels(float1_data, pres_min, pres_max):
     """
-    Filteres PRES levels for AXCTDs and FLOATs 
+    Set all values outside a pressure range to NaN across all data arrays.
+
+    Modifies PSALs, TEMPs, PRESs, and CNDCs (if present) in place on the
+    returned dict. Values where pressure < pres_min or > pres_max become NaN.
+
+    Parameters
+    ----------
+    float1_data : dict
+        Float data dict with keys PRESs, PSALs, TEMPs (and optionally CNDCs).
+    pres_min, pres_max : float
+        Pressure bounds (inclusive) in dbar.
+
+    Returns
+    -------
+    float1_data : dict
+        Same dict with out-of-range values set to NaN.
     """
     float1_pres_filter = (float1_data["PRESs"] >= pres_min) & (float1_data["PRESs"] <= pres_max)
     for var in ["PRESs", "PSALs", "TEMPs"]:
@@ -36,7 +90,23 @@ def filter_pres_levels(float1_data, pres_min, pres_max):
     return float1_data
 def read_float_apply_qc(nc_filepath):
     """
-    Reads in intermediate netcdf file for a float and applies QC to PSAL, PRES, TEMP - if QC is 3 or 4, mark as np.nan
+    Read intermediate netCDF files and apply QC masking.
+
+    Reads via read_intermediate_nc_file(), then sets all PSAL, PRES, and TEMP
+    values to NaN where QC = 3 or 4 (probably bad or bad). Also renames
+    PSAL_ADJUSTED → PSALs, PRES_ADJUSTED → PRESs, TEMP_ADJUSTED → TEMPs for
+    consistency with the reference data dicts.
+
+    Parameters
+    ----------
+    nc_filepath : str or Path
+        Directory of intermediate netCDF files.
+
+    Returns
+    -------
+    dict
+        Float data dict with QC masking applied. Keys include PSALs, TEMPs,
+        PRESs, JULDs, LONs, LATs, PROFILE_NUMS.
     """
     nc_data = read_intermediate_nc_file(nc_filepath)
     # Apply QC to floats
@@ -52,9 +122,22 @@ def read_float_apply_qc(nc_filepath):
     return nc_data
 def filter_float_overlap_date_range(float1_data, float1_name, float2_data, float2_name, just_overlap):
     """
-    Returns float data filtering for overlapping date range between 2 floats. 
-    If just_overlap is True: filters for just the overlapping date range. 
-    If False, filters for the entire date range of the later starting float.
+    Filter two float datasets to a common or partially overlapping date range.
+
+    Parameters
+    ----------
+    float1_data, float2_data : dict
+        Float data dicts (must contain JULDs array).
+    float1_name, float2_name : str
+        Float identifiers (used for print statements).
+    just_overlap : bool
+        True  = keep only the date range where both floats have profiles.
+        False = keep the entire range of whichever float started later.
+
+    Returns
+    -------
+    tuple of (dict, dict)
+        Filtered float1_data and float2_data with out-of-range profiles set to NaN.
     """
     float1_julds = float1_data["JULDs"]
     float2_julds = float2_data["JULDs"]
@@ -92,6 +175,27 @@ def filter_float_overlap_date_range(float1_data, float1_name, float2_data, float
 
     return float1_data, float2_data
 def find_psal_at_temp(target_temp, data, show_linear_temp_graph):
+    """
+    Find practical salinity at a specific target temperature for each profile.
+
+    Uses linear interpolation on TEMP vs PSAL to estimate PSAL at target_temp.
+    Profiles where target_temp is outside the observed temperature range return NaN.
+
+    Parameters
+    ----------
+    target_temp : float
+        Target isotherm temperature (°C).
+    data : dict
+        Float or reference data dict with keys TEMPs, PSALs, PRESs.
+    show_linear_temp_graph : bool
+        If True, displays a graph of each profile's interpolated PSAL at the
+        target temperature (for diagnostic use).
+
+    Returns
+    -------
+    psal_at_temp : ndarray (n_profiles,)
+        Practical salinity at target_temp for each profile. NaN if not found.
+    """
     # Assumes we already filtered PRES levels - non-valid are marked as np.nan
     KEY_NAMES = ["PRESs", "TEMPs", "PSALs"]
     local_data = data.copy()
@@ -146,6 +250,22 @@ def find_psal_at_temp(target_temp, data, show_linear_temp_graph):
 
     return np.squeeze(np.array(psal_at_temp))
 def make_TS_plot(list_of_data, list_of_labels):
+    """
+    Create a Temperature-Salinity diagram with sigma-t density contours.
+
+    Plots multiple datasets on the same axes using different colors from the
+    'tab10' colormap. Density contours are computed from GSW rho at surface
+    pressure and labeled as sigma-t (rho - 1000).
+
+    Function can handle up to 10 different data sources. 
+
+    Parameters
+    ----------
+    list_of_data : list of dict
+        Each dict must have keys PSALs and TEMPs (2D arrays, n_profiles×n_levels).
+    list_of_labels : list of str
+        Legend labels corresponding to each dataset in list_of_data.
+    """
     # Find the min/max of TEMP and PSAL across all datasets to set the limits of the grid
     smin, smax, tmin, tmax = np.inf, -np.inf, np.inf, -np.inf
     for data in list_of_data:
@@ -216,7 +336,27 @@ def make_TS_plot(list_of_data, list_of_labels):
     
 ######## READING FUNCTIONS ########
 def read_AXCTDs(filepath, bin_size):
-   
+    """
+    Read one AXCTD drop from an .edf file and return bin-averaged data.
+
+    Parses the tab-delimited data section after the 'Field9' header line,
+    extracting depth, temperature, and conductivity. Converts depth to pressure
+    using GSW. If bin_size > 0, performs pressure bin averaging and recalculates
+    practical salinity.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        Path to a single .edf AXCTD file.
+    bin_size : float
+        Pressure bin width in dbar. Pass 0 for no binning (return raw data).
+
+    Returns
+    -------
+    dict
+        Keys: PRESs, TEMPs, CNDCs, JULDs, LATS, LONS (all 1D arrays for one cast).
+    """
+
     before_data = True
     field9found = False
     after_data = False
@@ -400,15 +540,30 @@ def read_float_11678(txt_file):
         "LONS": np.squeeze(lons)
     }
 def read_regular_file(filepath, date, col_names, bin_size = None, cndc = False, lat = None, lon = None):
-    """ TEST THIS FUNCTION!!!!
-    Reads a regular csv or txt file and standardizes data
-    date format: "YYYY-MM-DD HH:MM:SS"
-    col_names: Pass in column names in the file as a list in the format [PRES_col_name, TEMP_col_name, PSAL_col_name]
-    cols_to_drop: if there are any cols to drop from the file, pass in a list of those column names.
-    ORP_WOOD -> CSV_FILES
-    COL_NAMES = ['Pressure_dbar', 'Temperature_C', 'Salinity_PSU', CNDC if applicable]
-    -- F10052 + F9443 COLS TO DROP ['Turbidity_NTU', 'N2_1_per_s2', 'PAR', 'Timestamp']
-    -- F10051 + F9444 COLS TO DROP ['Turbidity_NTU', 'N2_1_per_s2', 'PAR', 'Salinity_Source', 'Timestamp']
+    """
+    Read a generic CSV/TXT data file into a standard float data dict. 
+    Regular files are just data files containing column headers and values, with no metadata or special formatting. 
+    This function is meant to be flexible for various reference datasets that may come in a simple tabular format.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        Path to the data file (CSV or whitespace-delimited text).
+    date : str
+        Date string for this dataset (converted to JULD via to_julian_day).
+    col_names : list of str
+        Column names for [PRES, TEMP, PSAL, CNDC (optional)].
+    bin_size : float or None
+        If provided, bin-average data at this pressure interval (dbar).
+    cndc : bool
+        If True, read and return a CNDC column.
+    lat, lon : float or None
+        Position of the cast (stored as scalar in returned dict).
+
+    Returns
+    -------
+    dict
+        Keys: PSALs, TEMPs, PRESs, JULDs, LATS, LONS (and CNDCs if cndc=True).
     """
     fp_data = pd.read_csv(filepath)
     data_dict = fp_data.to_dict(orient='list')
@@ -446,66 +601,20 @@ def read_regular_file(filepath, date, col_names, bin_size = None, cndc = False, 
         "LATS": lat,
         "LONS": lon
     }
-def read_ORP_WOOD_ctd():
-    # F10052 twin
-    fp1 = Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\060671_20250712_2329DUNDEE_downcast_data.csv")
-    # F9443 twin
-    fp2 = Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\060671_20250714_1029_downcast_data.csv")
-    # F10051 twin
-    fp3 = Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\060671_20250724_0420_downcast_data.csv")
-    fp4 = Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\060671_20250727_1003_downcast_data.csv")
-    
-    fp1_data = pd.read_csv(fp1)
-    fp2_data = pd.read_csv(fp2)
-    fp3_data = pd.read_csv(fp3)
-    fp4_data = pd.read_csv(fp4)
-
-    # drop cols not needed
-    fp1_data = fp1_data.drop(columns=['Turbidity_NTU', 'N2_1_per_s2', 'PAR', 'Timestamp'])
-    fp2_data = fp2_data.drop(columns=['Turbidity_NTU', 'N2_1_per_s2', 'PAR', 'Timestamp'])
-    fp3_data = fp3_data.drop(columns=['Turbidity_NTU', 'N2_1_per_s2', 'PAR', 'Salinity_Source', 'Timestamp'])
-    fp4_data = fp4_data.drop(columns=['Turbidity_NTU', 'N2_1_per_s2', 'PAR', 'Salinity_Source', 'Timestamp'])
-    # Convert to dictionary 
-    data_dict_fp1 = fp1_data.to_dict(orient='list')
-    data_dict_fp2 = fp2_data.to_dict(orient='list')
-    data_dict_fp3 = fp3_data.to_dict(orient='list')
-    data_dict_fp4 = fp4_data.to_dict(orient='list')
-
-    julds = [to_julian_day(datetime.strptime("2025-07-12", "%Y-%m-%d")),
-             to_julian_day(datetime.strptime("2025-07-14", "%Y-%m-%d")),
-             to_julian_day(datetime.strptime("2025-07-24", "%Y-%m-%d")),
-             to_julian_day(datetime.strptime("2025-07-27", "%Y-%m-%d"))]
-    psal = [data_dict_fp1["Salinity_PSU"], data_dict_fp2["Salinity_PSU"], data_dict_fp3["Salinity_PSU"], data_dict_fp4["Salinity_PSU"]]
-    temp = [data_dict_fp1["Temperature_C"], data_dict_fp2["Temperature_C"], data_dict_fp3["Temperature_C"], data_dict_fp4["Temperature_C"]]
-    pres = [data_dict_fp1["Pressure_dbar"], data_dict_fp2["Pressure_dbar"], data_dict_fp3["Pressure_dbar"], data_dict_fp4["Pressure_dbar"],]
-    
-    CTD_data = {
-            "PSALs": np.squeeze(np.array(list(itertools.zip_longest(*psal, fillvalue=np.nan))).T),
-            "TEMPs": np.squeeze(np.array(list(itertools.zip_longest(*temp, fillvalue=np.nan))).T),
-            "PRESs": np.squeeze(np.array(list(itertools.zip_longest(*pres, fillvalue=np.nan))).T),
-            "JULDs": np.asarray(julds, dtype=np.float64)
-        }
-    return CTD_data
-def read_nicole_ctd():
-
-    fp1 = Path(r"C:\Users\szswe\Desktop\sal_drift\Nicole_CTD\060671_20250712_2329DUNDEE_downcast_data.csv")
-    fp1_data = pd.read_csv(fp1)
-    # drop cols not needed
-    fp1_data = fp1_data.drop(columns=['Turbidity_NTU', 'PAR', 'N2_1_per_s2', 'Timestamp'])
-    # Convert to dictionary 
-    data_dict_fp1 = fp1_data.to_dict(orient='list')
-
-
-    julds = float(to_julian_day(datetime.strptime("2025-07-12", "%Y-%m-%d")))
-
-    return {
-            "PSALs": np.asarray(data_dict_fp1["Salinity_PSU"], dtype=np.float64),
-            "TEMPs": np.asarray(data_dict_fp1["Temperature_C"], dtype=np.float64),
-            "PRESs": np.asarray(data_dict_fp1["Pressure_dbar"], dtype=np.float64),
-            "JULDs": julds
-        }
 def read_corrected_gem_data():
-    
+    """
+    Read corrected GEM (bottle-corrected) salinity and temperature data from Excel.
+
+    Organizes data by profile. Each profile entry contains depth-sorted PSAL, TEMP,
+    PRES measurements along with JULD, LAT, LON.
+
+    Returns
+    -------
+    dict of dict
+        Outer key: profile identifier string.
+        Inner keys: PSALs, TEMPs, PRESs, JULDs, LATS, LONS (1D arrays per profile).
+    """
+
     # read corrected gem data
     fp = Path(r"C:\Users\szswe\Desktop\sal_drift\GEM_Data\corrected_gem_from_linda\GEM2024 AML6 CTD_raw_and_corrected_as_per_salt_bottles .xlsx")
     db_corrected_gem = pd.read_excel(fp, 'GEM 2024 AML6 data ADJUSTED')
@@ -571,6 +680,22 @@ def read_corrected_gem_data():
 
     return GEM_CORR_DATA
 def read_bottle_data(fp):
+    """
+    Read bottle salinity sample data from an XLS file.
+
+    Each profile's bottle samples provide a sparse set of salinity measurements
+    at specific depths, useful as high-accuracy reference points.
+
+    Parameters
+    ----------
+    fp : str or Path
+        Path to the XLS bottle data file.
+
+    Returns
+    -------
+    dict
+        Keys: depths (list), samples (list of salinity values), JULDs (list).
+    """
 
     # read in XLS file
     df = pd.read_excel(fp, skiprows=7, usecols=[1,2,5,6,7])
@@ -635,7 +760,23 @@ def read_bottle_data(fp):
         "lats": -53.56,
         "lons": 69.28
     }
-def read_ctd_data(bin_sizes = None):
+def read_lorenze_ctd_data(bin_sizes = None):
+    """
+    Read Lorenz CTD cast data from .cnv format files.
+
+    Returns data from 2 CTD profiles. If bin_sizes is provided, bin-averages
+    the data at the specified pressure intervals.
+
+    Parameters
+    ----------
+    bin_sizes : list of float or None
+        Pressure bin widths (one per profile). If None, returns raw data.
+
+    Returns
+    -------
+    dict
+        Keys: PSALs, TEMPs, PRESs, JULDs, LATS, LONS (2D, 2×n_levels).
+    """
 
     ctd1 = Path(r"C:\Users\szswe\Desktop\sal_drift\Lorenz_CTD\GINR_Disko_CTD_2024_06_TA24023.cnv")
     ctd2 = Path(r"C:\Users\szswe\Desktop\sal_drift\Lorenz_CTD\SA25018.cnv")
@@ -749,7 +890,15 @@ def read_ctd_data(bin_sizes = None):
 
 ######## GRAPH FUNCTIONS  ########
 def generate_F9185_F9444_avg_PSAL():
- 
+    """
+    Compare F9185 and F9444 average salinity vs AXCTD reference data.
+
+    Filters both floats to 500–600 dbar, computes mean PSAL per profile, and
+    plots time series. Compares against three collocated AXCTD drops.
+
+    Hardcoded float paths and pressure range. For drift analysis.
+    """
+
     # Read in F9185
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9185\F9185_VI")
     F9185_data = read_float_apply_qc(nc_filepath)
@@ -822,6 +971,14 @@ def generate_F9185_F9444_avg_PSAL():
 
     plt.show()
 def generate_F9185_F9444_PSAL_at_TEMP():
+    """
+    Compare F9185 and F9444 PSAL at target isotherm (2°C) vs AXCTD reference.
+
+    Filters 300–900 dbar, finds PSAL at 2°C via interpolation, and plots
+    time series alongside AXCTD reference values.
+
+    Hardcoded float paths, pressure range, and target temperature.
+    """
     # Read in F9185
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9185\F9185_VI")
     F9185_data = read_float_apply_qc(nc_filepath)
@@ -888,6 +1045,14 @@ def generate_F9185_F9444_PSAL_at_TEMP():
     plt.title(f"PSAL at target temp {target_temp}°C F9185 and F9444 depth range {pres_min}-{pres_max}")
     plt.show()
 def generate_F10052_avg_PSAL():
+    """
+    Compare F10052 average salinity vs ORP WOOD CTD, GEM, and Lorenz CTD.
+
+    Filters 150–400 dbar, computes mean PSAL, and plots time series with
+    reference data from multiple sources.
+
+    Hardcoded float path and pressure range. For drift analysis.
+    """
     # Read in F10052
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10052\F10052_FTR")
     F10052_data = read_float_apply_qc(nc_filepath)
@@ -900,7 +1065,7 @@ def generate_F10052_avg_PSAL():
     corr_GEM = read_corrected_gem_data()
     # bottle_data = read_bottle_data(Path(r"C:\Users\szswe\Desktop\sal_drift\bottle_data\Saltprøveskema Grønland Disko 25-39868, all 2024.xls"))
     # Read in lorenze CTD data
-    lorenze_ctd_data = read_ctd_data(bin_sizes=[0, 1])
+    lorenze_ctd_data = read_lorenze_ctd_data(bin_sizes=[0, 1])
 
     # Filter PRES levels
     pres_min = 150
@@ -954,6 +1119,19 @@ def generate_F10052_avg_PSAL():
 
     plt.show()
 def generate_F10052_PSAL_at_TEMP(TT, save_dir):
+    """
+    Compare F10052 PSAL at target isotherm TT vs multiple reference datasets.
+
+    Filters 150–400 dbar and interpolates PSAL at temperature TT for F10052 and
+    each reference dataset. Plots results.
+
+    Parameters
+    ----------
+    TT : float
+        Target isotherm temperature (°C).
+    save_dir : str or None
+        If provided, saves the figure to this directory. Otherwise shows interactively.
+    """
     # Read in F10052
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10052\F10052_FTR")
     F10052_data = read_float_apply_qc(nc_filepath)
@@ -965,7 +1143,7 @@ def generate_F10052_PSAL_at_TEMP(TT, save_dir):
     # Read in GEM and bottle data 
     corr_GEM = read_corrected_gem_data()
     # bottle_data = read_bottle_data(Path(r"C:\Users\szswe\Desktop\sal_drift\bottle_data\Saltprøveskema Grønland Disko 25-39868, all 2024.xls"))
-    lorenze_ctd_data = read_ctd_data(bin_sizes=[0, 1])
+    lorenze_ctd_data = read_lorenze_ctd_data(bin_sizes=[0, 1])
 
     # Filter PRES levels
     pres_min = 150
@@ -1026,6 +1204,14 @@ def generate_F10052_PSAL_at_TEMP(TT, save_dir):
     plt.close()
 # F9444
 def F9444_avg_PSAL():
+    """
+    Analyze F9444 salinity drift via average PSAL vs CTD/AXCTD references.
+
+    Filters 700–800 dbar, plots F9444 average PSAL time series alongside Nicole CTD
+    and multiple Melville AXCTD reference points.
+
+    Hardcoded float path and pressure range.
+    """
     # Read in F9444
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9444\F9444_VI")
     F9444_data = read_float_apply_qc(nc_filepath)
@@ -1104,6 +1290,19 @@ def F9444_avg_PSAL():
 
     plt.show()
 def F9444_PSAL_AT_TEMP(TT, save_dir):
+    """
+    Analyze F9444 PSAL at target isotherm TT vs reference data.
+
+    Filters 400–600 dbar, interpolates PSAL at temperature TT for F9444 and
+    reference datasets, then plots.
+
+    Parameters
+    ----------
+    TT : float
+        Target isotherm temperature (°C).
+    save_dir : str or None
+        If provided, saves the figure. Otherwise shows interactively.
+    """
     # Read in F9444
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9444\F9444_VI")
     F9444_data = read_float_apply_qc(nc_filepath)
@@ -1186,6 +1385,12 @@ def F9444_PSAL_AT_TEMP(TT, save_dir):
     plt.savefig(os.path.join(save_dir, f"F9444_PSAL_at_{target_temp}C.png"))
     plt.close()
 def F9444_TS():
+    """
+    Generate a TS diagram for F9444 alongside F9185 and AXCTD reference data.
+
+    Shows the float's T-S relationship relative to co-located reference profiles.
+    Hardcoded float paths.
+    """
     # Read in F9444
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9444\F9444_VI")
     F9444_data = read_float_apply_qc(nc_filepath)
@@ -1265,6 +1470,12 @@ def F9444_TS():
     make_TS_plot(data, list_of_labels)
 # F9443
 def F9443_avg_PSAL():
+    """
+    Analyze F9443 salinity drift via average PSAL vs ORP WOOD CTD and AXCTD data.
+
+    Filters 500–600 dbar, plots F9443 average PSAL time series alongside reference data.
+    Hardcoded float path and pressure range.
+    """
     # Read in F9443
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_VI")
     F9443_data = read_float_apply_qc(nc_filepath)
@@ -1331,6 +1542,18 @@ def F9443_avg_PSAL():
 
     plt.show()
 def F9443_PSAL_AT_TEMP(TT, save_dir):
+    """
+    Analyze F9443 PSAL at target isotherm TT vs reference data.
+
+    Filters 500–700 dbar, interpolates PSAL at temperature TT, and plots.
+
+    Parameters
+    ----------
+    TT : float
+        Target isotherm temperature (°C).
+    save_dir : str or None
+        If provided, saves the figure. Otherwise shows interactively.
+    """
 
     # Read in F9443
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_VI")
@@ -1401,6 +1624,12 @@ def F9443_PSAL_AT_TEMP(TT, save_dir):
     plt.savefig(os.path.join(save_dir, f"F9443_PSAL_at_{target_temp}C.png"))
     plt.close()
 def F9443_TS():
+    """
+    Generate a TS diagram for F9443 alongside float F11678 and ORP WOOD CTD.
+
+    Shows the float's T-S relationship relative to co-located reference profiles.
+    Hardcoded float paths.
+    """
     # Read in F9443
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_VI")
     F9443_data = read_float_apply_qc(nc_filepath)
@@ -1435,6 +1664,7 @@ def F9443_TS():
     data = [F9443_data, nicole_summer_ctd]
     list_of_labels = ["F9443 + 0.025", "Nicole's Summer CTD"]
     make_TS_plot(data, list_of_labels)
+
 if __name__ == '__main__':
 
     F9443_TS()   

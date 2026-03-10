@@ -1,3 +1,25 @@
+"""
+make_final_nc_files.py — Generate final delayed-mode ARGO netCDF files.
+
+This is the last step in the DMODE pipeline. It reads intermediate netCDF files
+produced by delayed_mode_processing.py and a per-float config text file, then
+writes fully compliant ARGO delayed-mode netCDF files.
+
+Workflow
+--------
+1. make_config_file()        — Generate or pre-populate the config .txt file
+2. process_data_dmode_files() — Read intermediate files + config, write final netCDF
+
+Config file keys (one per line, format: KEY = VALUE)
+-------------------------------------------------------
+Platform serial number, WMO number, DAC, project names, float type, sensor info,
+calibration coefficients, scientific calibration details, and HISTORY entries.
+Missing values should be left as 'None' for manual completion.
+
+If org_argo_netcdf_filepath is provided to process_data_dmode_files(), certain
+metadata (date_creation, existing HISTORY/SCIENTIFIC_CALIB entries) is copied
+from the original real-time files.
+"""
 import copy
 import glob
 import numpy as np
@@ -7,18 +29,24 @@ from tools import from_julian_day, read_intermediate_nc_file, to_julian_day
 import os 
 import numpy.ma as ma
 import re
-import gsw 
 from pathlib import Path
 
 def masked_byte_array_to_str(masked_array):
     """
-    Converts a masked byte array to a regular string.
-    
-    Parameters:
-        masked_array (numpy.ma.MaskedArray or numpy.ndarray): The masked byte array to convert.
+    Convert a masked byte array to a plain Python string.
 
-    Returns:
-        str: The resulting string, with masked elements replaced by an empty string.
+    Masked elements are replaced with empty string. Used to decode string
+    variables from netCDF4 masked arrays (e.g. HISTORY_DATE, PLATFORM_NUMBER).
+
+    Parameters
+    ----------
+    masked_array : numpy.ma.MaskedArray
+        Masked array of byte characters (dtype='S1' or similar).
+
+    Returns
+    -------
+    str
+        Decoded string with masked positions replaced by ''.
     """
     if isinstance(masked_array, ma.MaskedArray):
         # Replace masked values with an empty byte
@@ -32,13 +60,24 @@ def masked_byte_array_to_str(masked_array):
 
 def make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = None):
     """
-    Makes a config ".txt" file for an associated float, inits unknown vars with "None"
-    for user to manually fill in later.
+    Create a config text file for a float's delayed-mode processing parameters.
 
-    Args:
-        float_num (str): float number 
-        dest_filepath (str): destination filepath
-        org_argo_netcdf_filepath (str, optional): filepath to an orginal argo netcdf float profile. Defaults to None.
+    If org_argo_netcdf_filepath is provided, extracts available metadata from the
+    original real-time ARGO netCDF files (platform number, sensor info, etc.) and
+    pre-populates the config. Unknown fields are set to 'None' for manual entry.
+
+    If org_argo_netcdf_filepath is None, writes an empty template with all fields
+    set to 'None'.
+
+    Parameters
+    ----------
+    float_num : str
+        Float identifier used in the output filename.
+    dest_filepath : str
+        Directory where the config .txt file is written.
+    org_argo_netcdf_filepath : str, optional
+        Directory of original real-time ARGO netCDF files. If provided, metadata
+        is extracted and pre-filled in the config.
     """
 
     # Get first file in dir of file 
@@ -173,21 +212,24 @@ def make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = None):
 
 def history_qc_test_converter(input_value, mode='decode'):
     """
-    Maps between a list of QC tests and their associated numerical values. Takes said list
-    and converts them to a hex number (added value of QC test's associated numerical value,
-    converted to a hex number). This mapping goes both ways, so passing in a hex number and setting
-    mode = 'decode' returns list of QC tests performed.
+    Convert between QC test names and their ARGO hex-encoded bitmask values.
 
-    Args:
-        mode (str, optional): decode, default val
-            - input_val (str): hex number
-            - returns a list of QC tests performed
-        mode (str, optional): encode
-            - input_val (list, str): list of qc_tests names
-            - returns str hex number
+    ARGO stores QC test results as a hex string where each bit position represents
+    a specific test. This function decodes or encodes that mapping.
 
-    Raises:
-        ValueError: raised when mode passed in is not 'decode' or 'encode'
+    Parameters
+    ----------
+    input_value : str or list
+        In decode mode: hex string (e.g. 'FFFB0000') to decode to test names.
+        In encode mode: list of test name strings to encode to hex.
+    mode : str
+        'decode' (default): hex → list of test names.
+        'encode': list of test names → hex string.
+
+    Returns
+    -------
+    list of str (decode mode) or str (encode mode)
+        Decoded QC test names, or hex-encoded bitmask string.
     """
     qc_tests = {
         2: "Platform Identification test",
@@ -236,13 +278,22 @@ def history_qc_test_converter(input_value, mode='decode'):
 
 def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     """
-    Makes the final version of ARGO Delayed Mode Processed NETCDF File. Variables have
-    complete description names and such.
+    Write a single final delayed-mode ARGO netCDF file.
 
-    Args:
-        final_nc_data_prof (dict): dictionary of all associated parameters needed to generate file.
-        float_num (str): float number
-        dest_filepath (str): destination filepath
+    Creates a fully compliant ARGO netCDF file with all required dimensions,
+    global attributes, and variables. Variable names, units, and long names follow
+    the ARGO data format specification.
+
+    Parameters
+    ----------
+    final_nc_data_prof : dict
+        Complete dict of all arrays to write. Keys mirror the ARGO netCDF variable
+        names (e.g. 'PRES', 'PRES_ADJUSTED', 'PROFILE_PRES_QC', 'HISTORY_DATE',
+        'SCIENTIFIC_CALIB_COMMENT', etc.).
+    float_num : str
+        Float identifier, used to name the output file.
+    dest_filepath : str
+        Directory where the .nc file is written.
     """
 
 
@@ -478,6 +529,10 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     CNDC_QC[:] = final_nc_data_prof["CNDC_QC"]
 
     # ############################################################################
+    # Change in ARGO formating standards, CNDC and subsequent CNDC related variables are considered 
+    # "intermediate" parameters and are not included in the final NETCDF file
+    # Kept here for reference and potential future use if ARGO standards change again to include these variables in the final NETCDF file.
+
     # CNDC_ADJUSTED = nc.createVariable('CNDC_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
     # CNDC_ADJUSTED.long_name = "Electrical conductivity"
     # CNDC_ADJUSTED.standard_name = "sea_water_electrical_conductivity"
@@ -519,9 +574,11 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     TEMP_CNDC_QC[:] = final_nc_data_prof["TEMP_CNDC_QC"]
 
     ############################################################################
+    # Argo formatting says fill_value should be 0, but this causes issues with NOAA's (org hosting ARGO data) pipeline
     # NB_SAMPLE_CTD = nc.createVariable('NB_SAMPLE_CTD', 'i2', ('N_PROF', 'N_LEVELS'), fill_value=0)
     NB_SAMPLE_CTD = nc.createVariable('NB_SAMPLE_CTD', 'i2', ('N_PROF', 'N_LEVELS'), fill_value=-32767)
     ############################################################################
+
     NB_SAMPLE_CTD.long_name = "Number of samples in each pressure bin for the CTD"
     NB_SAMPLE_CTD.units = "count"
     NB_SAMPLE_CTD.C_format = "%5d"
@@ -748,13 +805,23 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
 
 def calc_overall_profile_qc(qc_arr):
     """
-    Calculates letter grade for parameters: PROFILE_{PARAM}_QC, based on (number of good vals)/ (total number of levels)
+    Compute the PROFILE_{PARAM}_QC letter grade from a QC flag array.
 
-    Args:
-        qc_arr (numpy array): qc array of associated PARAM
+    Grades are based on the fraction of levels with good/probably-good data:
+      A: 100% good (QC=1)
+      B: 75–99% good
+      C: 50–74% good
+      D: <50% good
 
-    Returns:
-        str: letter grade of PROFILE_{PARAM}_QC, as defined in ARGO delayed mode manual 
+    Parameters
+    ----------
+    qc_arr : ndarray
+        QC flag array for a single variable and profile.
+
+    Returns
+    -------
+    str
+        Letter grade: 'A', 'B', 'C', or 'D'.
     """
 
     total_levels = len(qc_arr)
@@ -775,20 +842,47 @@ def calc_overall_profile_qc(qc_arr):
         return 'F'
 
 def convert_qc_to_s1(qc_array):
+    """
+    Convert a numeric QC array to a space-separated S1 (single-character) string.
+
+    NaN values are replaced with a space character. Used to format integer QC arrays for
+    ARGO netCDF string variables.
+
+    Parameters
+    ----------
+    qc_array : ndarray
+        Numeric QC flag array.
+
+    Returns
+    -------
+    str
+        String of single-character QC digits with spaces for NaN.
+    """
     qc_str = np.where(np.isnan(qc_array), " ", qc_array.astype(int).astype(str))
     return qc_str.astype("S1")
 
 def format_argo_data(data, step):
     """
-    Function to format ARGO data before delayed mode processing. 
-    Procedures include:
-        - 1: for all QC arr's flip 0's to 1's
-        - 2: for all arrs, turn nans to FILLVALs, and where PARAM_ADJUSTED_QC = 4 or 9, PARAM_ADJUSTED + PARAM_ADJUSTED_ERROR = FillVal
-    Args:
-        data (dict): dictionary of all associated parameters needed to generate delayed mode file.
+    Reformat the argo_data dict for final ARGO netCDF output in two steps.
 
-    Returns:
-        dict: data reformatted 
+    Step 1 (called first): Convert all QC=0 (no QC) to QC=1 (good) in all
+      ADJUSTED_QC arrays. Sets the baseline assumption that unreviewed data is good.
+
+    Step 2 (called after QC review): Convert NaN values to ARGO fill values
+      and mask depth levels where PRES_ADJUSTED_QC = 4 or 9 (bad/missing).
+
+    Parameters
+    ----------
+    data : dict
+        Intermediate netCDF data dict.
+    step : int
+        1 = flip QC=0 to QC=1.
+        2 = replace NaN with fill values and mask bad levels.
+
+    Returns
+    -------
+    data : dict
+        Updated dict.
     """
 
     if step == 1:
@@ -846,14 +940,29 @@ def format_argo_data(data, step):
     return data
 
 def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
-    """_summary_
+    """
+    Initialize HISTORY_{PARAM} arrays that are not set by set_history_parems().
 
-    Args:
-        final_nc_data_prof (dict): dictionary of all associated parameters needed to generate file.
-        parems_to_fill (list of str, optional): List of HISTORY_{PARAM}s to fill that are not always set. Defaults to None.
+    ARGO netCDF files require all HISTORY arrays to have the same shape. This
+    function fills the remaining (unsupported) history parameter arrays with
+    appropriate empty/fill values.
 
-    Returns:
-        dict: returns final_nc_data_prof with set HISTORY_{PARAM} values
+    NOTE: Change hardcoded values according to personal/ insitutional use.
+    TODO: make these values function inputs or config file parameters instead of hardcoded in the function
+
+    HISTORY_INSTITUTION PARAM
+
+    Parameters
+    ----------
+    final_nc_data_prof : dict
+        The in-progress final netCDF data dict.
+    parems_to_fill : list of str, optional
+        List of HISTORY_{PARAM} names to fill. If None, fills a default set.
+
+    Returns
+    -------
+    final_nc_data_prof : dict
+        Same dict with the specified HISTORY arrays initialized.
     """
     
     # PAREMS that are always set
@@ -916,14 +1025,27 @@ def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
 
 def set_history_parems(final_nc_data_prof, type_to_set, **kwargs):
     """
-    This function sets HISTORY_{PARAM} for ARGO delayed mode processing NETCDF files.
+    Append a HISTORY entry to the final ARGO netCDF data dict.
 
-    Args:
-        final_nc_data_prof (dict): dictionary of all associated parameters needed to generate file.
-        type_to_set (str): Associated HISTORY_{PARAM} to set
+    ARGO history entries document processing steps applied to the data. This
+    function supports appending entries for delayed-mode processing steps.
 
-    Returns:
-        dict: returns final_nc_data_prof with set HISTORY_{PARAM} values
+    NOTE: Change hardcoded values according to personal/ insitutional use.
+    TODO: make these values function inputs or config file parameters instead of hardcoded in the function
+
+    Parameters
+    ----------
+    final_nc_data_prof : dict
+        The in-progress final netCDF data dict.
+    type_to_set : str
+        Type of history entry to append (e.g. 'SET_DMODE').
+    **kwargs :
+        Variable history field values to populate (e.g. DATE, ACTION, QCTEST).
+
+    Returns
+    -------
+    final_nc_data_prof : dict
+        Same dict with HISTORY arrays updated.
     """
     # Set flag to indicate we've done delayed mode processing
     if type_to_set == "SET_DMODE":
@@ -939,7 +1061,7 @@ def set_history_parems(final_nc_data_prof, type_to_set, **kwargs):
         
         final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_SOFTWARE', 'HISTORY_SOFTWARE_RELEASE', 'HISTORY_REFERENCE', 'HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_DATE', 'HISTORY_INSTITUTION'])
     
-    # 5/30/2025 Sweet Zhang: not used, just above history params need to be set to indicate delayed mode processing
+    # 5/30/2025 Sweet Zhang: not used, just above history params need to be set to indicate delayed mode processing according to ARGO standards
     # if type_to_set == "SET_IP":
     #     # We always set this first
     #     if final_nc_data_prof["HISTORY_ACTION"] is None:
@@ -995,7 +1117,28 @@ def set_history_parems(final_nc_data_prof, type_to_set, **kwargs):
     return final_nc_data_prof
 
 def get_padded_array(kwargs, key, pad_type):
+    """
+    Retrieve and pad an array from kwargs to the required ARGO field length.
 
+    Different ARGO history/calib fields have fixed character-array lengths.
+    This function retrieves the value for key from kwargs, encodes it to bytes,
+    and pads to the required length based on pad_type.
+
+    Parameters
+    ----------
+    kwargs : dict
+        Keyword argument dictionary (typically from set_history_parems or set_sci_calib_parems).
+    key : str
+        Key to retrieve from kwargs.
+    pad_type : str
+        Determines target length: 'SET_DATE' pads to 14 chars (YYYYMMDDHHMMSS),
+        other values pad to standard ARGO field lengths.
+
+    Returns
+    -------
+    ndarray
+        Byte-encoded, padded array.
+    """
     value = kwargs.get(key)
 
     if value is None:
@@ -1020,7 +1163,27 @@ def get_padded_array(kwargs, key, pad_type):
             )
     
 def set_sci_calib_parems(final_nc_data_prof, param_to_set, **kwargs):
+    """
+    Set SCIENTIFIC_CALIB_{COEFFICIENT/COMMENT/EQUATION/DATE} arrays.
 
+    These arrays document the scientific calibration applied to each parameter
+    in the final delayed-mode file, following the ARGO data format specification.
+
+    Parameters
+    ----------
+    final_nc_data_prof : dict
+        The in-progress final netCDF data dict.
+    param_to_set : str
+        Which field to set: 'SET_COEFFICIENT', 'SET_COMMENT', 'SET_EQUATION',
+        or 'SET_DATE'.
+    **kwargs :
+        Field values to populate (e.g. PRES=..., TEMP=..., PSAL=...).
+
+    Returns
+    -------
+    final_nc_data_prof : dict
+        Same dict with SCIENTIFIC_CALIB arrays updated.
+    """
     pres = get_padded_array(kwargs, "pres", param_to_set)
     temp = get_padded_array(kwargs, "temp", param_to_set)
     cndc = get_padded_array(kwargs, "cndc", param_to_set)
@@ -1042,7 +1205,33 @@ def set_sci_calib_parems(final_nc_data_prof, param_to_set, **kwargs):
 
         
 def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = None):
+    """
+    Main processing function: read intermediate netCDF + config and write final ARGO files.
 
+    For each profile:
+      1. Reads intermediate netCDF data via read_intermediate_nc_file().
+      2. Formats data via format_argo_data() (steps 1 and 2).
+      3. Reads the config file to populate global attributes and calibration info.
+      4. If org_netcdf_fp is provided, copies metadata from original real-time files
+         (date_creation, existing HISTORY and SCIENTIFIC_CALIB entries).
+      5. Calls make_final_nc_files() to write the final netCDF.
+
+    NOTE: If PSAL correction is needed, see "apply salinity offset"
+
+    Parameters
+    ----------
+    nc_filepath : str
+        Directory of intermediate netCDF files.
+    float_num : str
+        Float identifier (e.g. 'F9186').
+    dest_filepath : str
+        Output directory for final delayed-mode netCDF files.
+    config_fp : str
+        Path to the config text file generated by make_config_file().
+    org_netcdf_fp : str, optional
+        Directory of original real-time ARGO netCDF files. If provided, metadata
+        is inherited from these files.
+    """
     if org_netcdf_fp is not None:
         org_files = sorted(glob.glob(os.path.join(org_netcdf_fp, "*.nc")))
     processed_argo_data = read_intermediate_nc_file(nc_filepath)
@@ -1341,10 +1530,11 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         # Set CNDC QC vals to PSAL QC vals
         final_nc_data_prof["CNDC_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
 
-    #    # apply salinity offset
-    #     final_nc_data_prof["PSAL_ADJUSTED"] = final_nc_data_prof["PSAL_ADJUSTED"] + 0.025
+        ########################### apply salinity offset ###########################
+        #  final_nc_data_prof["PSAL_ADJUSTED"] = final_nc_data_prof["PSAL_ADJUSTED"] + 0.025
+        #############################################################################
 
-        # Format data NOTE: this needs to be last step!!!
+        # Format data, this needs to be last step for workflow purposes
         final_nc_data_prof = format_argo_data(final_nc_data_prof, 2)
 
         make_final_nc_files(final_nc_data_prof, float_num, dest_filepath)
