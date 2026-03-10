@@ -58,7 +58,7 @@ def make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = None):
         if org_argo_netcdf_filepath is None:
             txt_file.write("DATA_CENTRE = None\n")
             txt_file.write("DATA_MODE = None\n")
-            txt_file.write("DATA_STATE_INDICATOR= None\n")
+            txt_file.write("DATA_STATE_INDICATOR = None\n")
             txt_file.write("DATA_TYPE = None\n")
             txt_file.write("DC_REFERENCE = None\n")
             txt_file.write("DIRECTION = None\n")
@@ -167,7 +167,6 @@ def make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = None):
             txt_file.write(f"WMO_INST_TYPE = {''.join(wmo_inst_type)}\n")
         
         txt_file.write(f"===========================ADJUSTED_ERROR_PARAMS===========================\n")
-        txt_file.write(f"CNDC_ADJUSTED_ERROR = None\n")
         txt_file.write(f"PRES_ADJUSTED_ERROR = None\n")
         txt_file.write(f"PSAL_ADJUSTED_ERROR = None\n")
         txt_file.write(f"TEMP_ADJUSTED_ERROR = None\n")
@@ -266,83 +265,33 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     nc.createDimension('N_CALIB', final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"].shape[0])
 
     # Global Attributes
-    nc.user_manual_version = "3.9"
-    nc.institution = 'AOML'
-    nc.Conventions = "Argo-3.9 CF-1.6"
     nc.title = "Argo float vertical profile"
-    nc.featureType = "trajectoryProfile"
+    nc.institution = 'JPL'
     nc.source = 'Argo float'
     nc.history = f"created: {str(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}"
-    
-    CNDC = nc.createVariable('CNDC', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    CNDC.long_name = "Electrical conductivity"
-    CNDC.standard_name = "sea_water_electrical_conductivity"
-    CNDC.units = "mhos/m"
-    CNDC.valid_min = np.float32(0.0)
-    CNDC.valid_max = np.float32(8.5)
-    CNDC.C_format = "%12.5f"
-    CNDC.FORTRAN_format = "F12.5"
-    CNDC.resolution = np.float32(1.0e-4)
-    CNDC[:] = final_nc_data_prof["CNDC"]
-
-    CNDC_ADJUSTED = nc.createVariable('CNDC_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    CNDC_ADJUSTED.long_name = "Electrical conductivity"
-    CNDC_ADJUSTED.standard_name = "sea_water_electrical_conductivity"
-    CNDC_ADJUSTED.units = "mhos/m"
-    CNDC_ADJUSTED.valid_min = np.float32(0.0)
-    CNDC_ADJUSTED.valid_max = np.float32(8.5)
-    CNDC_ADJUSTED.C_format = "%12.5f"
-    CNDC_ADJUSTED.FORTRAN_format = "F12.5"
-    CNDC_ADJUSTED.resolution = np.float32(1.0e-4)
-    CNDC_ADJUSTED[:] = final_nc_data_prof["CNDC_ADJUSTED"]
-
-    CNDC_ADJUSTED_ERROR = nc.createVariable('CNDC_ADJUSTED_ERROR', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    CNDC_ADJUSTED_ERROR.long_name = "Contains the error on the adjusted values as determined by the delayed mode QC process"
-    CNDC_ADJUSTED_ERROR.units = "mhos/m"
-    CNDC_ADJUSTED_ERROR.C_format = "%12.5f"
-    CNDC_ADJUSTED_ERROR.FORTRAN_format = "F12.5"
-    CNDC_ADJUSTED_ERROR.resolution = np.float32(1.0e-4)
-    CNDC_ADJUSTED_ERROR[:] = final_nc_data_prof["CNDC_ADJUSTED_ERROR"]
-
-    CNDC_ADJUSTED_QC = nc.createVariable('CNDC_ADJUSTED_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value = " ")
-    CNDC_ADJUSTED_QC.long_name = "quality flag"
-    CNDC_ADJUSTED_QC.conventions = "Argo reference table 2"
-    CNDC_ADJUSTED_QC[:] = final_nc_data_prof["CNDC_ADJUSTED_QC"].astype('S1')
-
-    CNDC_QC = nc.createVariable('CNDC_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value = " ")
-    CNDC_QC.long_name = "quality flag"
-    CNDC_QC.conventions = "Argo reference table 2"
-    CNDC_QC[:] = final_nc_data_prof["CNDC_QC"].astype('S1')
-
-    CONFIG_MISSION_NUMBER = nc.createVariable('CONFIG_MISSION_NUMBER', 'i4', ('N_PROF'), fill_value=99999)
-    CONFIG_MISSION_NUMBER.long_name = "Unique number denoting the missions performed by the float"
-    CONFIG_MISSION_NUMBER.conventions = "1...N, 1 : first complete mission"
-    CONFIG_MISSION_NUMBER[:] = final_nc_data_prof["CONFIG_MISSION_NUMBER"]
-            
-    CYCLE_NUMBER = nc.createVariable('CYCLE_NUMBER', 'i4', ('N_PROF'), fill_value=99999)
-    CYCLE_NUMBER.long_name = "Float cycle number"
-    CYCLE_NUMBER.conventions = "0...N, 0 : launch cycle (if exists), 1 : first complete cycle"
-    CYCLE_NUMBER[:] = final_nc_data_prof["CYCLE_NUMBER"]
-
-    DATA_CENTRE = nc.createVariable('DATA_CENTRE', 'S1', ('N_PROF', 'STRING2'), fill_value = " ")
-    DATA_CENTRE.long_name = "Data centre in charge of float data processing"
-    DATA_CENTRE.conventions = "Argo reference table 4"
-    DATA_CENTRE[:] = np.array(list(final_nc_data_prof["DATA_CENTRE"]), dtype='S1')
-
-    DATA_MODE = nc.createVariable('DATA_MODE', 'S1', ('N_PROF'), fill_value=" ")
-    DATA_MODE.long_name = "Delayed mode or real time data"
-    DATA_MODE.conventions = "R : real time; D : delayed mode; A : real time with adjustment"
-    DATA_MODE[:] = 'D'
-
-    DATA_STATE_INDICATOR = nc.createVariable('DATA_STATE_INDICATOR', 'S1', ('N_PROF', 'STRING4'), fill_value=" ")
-    DATA_STATE_INDICATOR.long_name = "Degree of processing the data have passed through"
-    DATA_STATE_INDICATOR.conventions = "Argo reference table 6"
-    DATA_STATE_INDICATOR[:] = np.array(np.pad(list(final_nc_data_prof["DATA_STATE_INDICATOR"]), (0, 4 - len(final_nc_data_prof["DATA_STATE_INDICATOR"])), mode='constant', constant_values=' '), dtype='S1')
+    nc.references = "http://www.argodatamgt.org/Documentation"
+    nc.user_manual_version = "3.9"
+    nc.Conventions = "Argo-3.9 CF-1.6"
+    nc.featureType = "trajectoryProfile"
+    nc.comment_dmqc_operator = "PRIMARY | https://orcid.org/0000-0002-4515-8771| Josh Willis, JPL"
     
     DATA_TYPE = nc.createVariable('DATA_TYPE', 'S1', ('STRING16'), fill_value=" ")
     DATA_TYPE.long_name = "Data type"
     DATA_TYPE.conventions = "Argo reference table 1"
     DATA_TYPE[:] = list('Argo profile    ')
+
+    FORMAT_VERSION = nc.createVariable('FORMAT_VERSION', 'S1', ('STRING4'), fill_value=" ")
+    FORMAT_VERSION.long_name = "File format version"
+    FORMAT_VERSION[:] = np.array(np.pad(list(final_nc_data_prof["FORMAT_VERSION"]), (0, 4 - len(final_nc_data_prof["FORMAT_VERSION"])), mode='constant', constant_values=' '), dtype='S1')
+
+    HANDBOOK_VERSION = nc.createVariable('HANDBOOK_VERSION', 'S1', ('STRING4'), fill_value=" ")
+    HANDBOOK_VERSION.long_name = "Data handbook version"
+    HANDBOOK_VERSION[:] = np.array(np.pad(list(final_nc_data_prof["HANDBOOK_VERSION"]), (0, 4 - len(final_nc_data_prof["HANDBOOK_VERSION"])), mode='constant', constant_values=' '), dtype='S1')
+
+    REFERENCE_DATE_TIME = nc.createVariable('REFERENCE_DATE_TIME', 'S1', ('DATE_TIME'), fill_value=" ")
+    REFERENCE_DATE_TIME.long_name = "Date of reference for Julian days"
+    REFERENCE_DATE_TIME.conventions = "YYYYMMDDHHMISS"
+    REFERENCE_DATE_TIME[:] = np.array(list(final_nc_data_prof["REFERENCE_DATE_TIME"]), dtype='S1')
 
     DATE_CREATION = nc.createVariable('DATE_CREATION', 'S1', ('DATE_TIME'), fill_value=" ")
     DATE_CREATION.long_name = "Date of file creation"
@@ -354,90 +303,75 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     DATE_UPDATE.conventions = "YYYYMMDDHHMISS"
     DATE_UPDATE[:] = final_nc_data_prof["DATE_UPDATE"]
 
-    DC_REFERENCE = nc.createVariable('DC_REFERENCE', 'S1', ('N_PROF', 'STRING32'), fill_value=" ")
-    DC_REFERENCE.long_name = "Station unique identifier in data centre"
-    DC_REFERENCE.conventions = "Data centre convention"
-    DC_REFERENCE[:] = np.array(np.pad(list(final_nc_data_prof["DC_REFERENCE"]), (0, 32 - len(final_nc_data_prof["DC_REFERENCE"])), mode='constant', constant_values=' '), dtype='S1')
+    PLATFORM_NUMBER = nc.createVariable('PLATFORM_NUMBER', 'S1', ('N_PROF', 'STRING8'), fill_value=" ")
+    PLATFORM_NUMBER.long_name = "Float unique identifier"
+    PLATFORM_NUMBER.conventions = "WMO float identifier : A9IIIII"
+    PLATFORM_NUMBER[:] = np.array(np.pad(list(final_nc_data_prof["PLATFORM_NUMBER"]), (0, 8 - len(final_nc_data_prof["PLATFORM_NUMBER"])), mode='constant', constant_values=' '), dtype='S1')
+
+    PROJECT_NAME = nc.createVariable('PROJECT_NAME', 'S1', ('N_PROF', 'STRING64'), fill_value=" ")
+    PROJECT_NAME.long_name = "Name of the project"
+    PROJECT_NAME[:] = np.array(np.pad(list(final_nc_data_prof["PROJECT_NAME"]), (0, 64 - len(final_nc_data_prof["PROJECT_NAME"])), mode='constant', constant_values=' '), dtype='S1')
+
+    PI_NAME = nc.createVariable('PI_NAME', 'S1', ('N_PROF', 'STRING64'), fill_value=" ")
+    PI_NAME.long_name = "Name of the principal investigator"
+    PI_NAME[:] = np.array(np.pad(list(final_nc_data_prof["PI_NAME"]), (0, 64 - len(final_nc_data_prof["PI_NAME"])), mode='constant', constant_values=' '), dtype='S1')
+
+    STATION_PARAMETERS = nc.createVariable('STATION_PARAMETERS', 'S1', ('N_PROF', 'N_PARAM', 'STRING16'), fill_value=" ")
+    STATION_PARAMETERS.long_name = "List of available parameters for the station"
+    STATION_PARAMETERS.conventions = "Argo reference table 3"
+    STATION_PARAMETER_temp = []
+    for param in final_nc_data_prof["STATION_PARAMETERS"].split(', '):
+        param_pad = np.pad(list(param), (0, 16 - len(param)), mode='constant', constant_values=' ')
+        STATION_PARAMETER_temp.append(param_pad)
+    STATION_PARAMETERS[:] = np.array(STATION_PARAMETER_temp, dtype='S1')   
+
+    CYCLE_NUMBER = nc.createVariable('CYCLE_NUMBER', 'i4', ('N_PROF'), fill_value=99999)
+    CYCLE_NUMBER.long_name = "Float cycle number"
+    CYCLE_NUMBER.conventions = "0...N, 0 : launch cycle (if exists), 1 : first complete cycle"
+    CYCLE_NUMBER[:] = final_nc_data_prof["CYCLE_NUMBER"]
 
     DIRECTION = nc.createVariable('DIRECTION', 'S1', ('N_PROF'), fill_value=" ")
     DIRECTION.long_name = "Direction of the station profiles"
     DIRECTION.conventions = "A: ascending profiles, D: descending profiles"
     DIRECTION[:] = 'A' 
 
-    FIRMWARE_VERSION = nc.createVariable('FIRMWARE_VERSION', 'S1', ('N_PROF', 'STRING32'), fill_value=" ")
-    FIRMWARE_VERSION.long_name = "Instrument firmware version"
-    FIRMWARE_VERSION[:] = np.array(np.pad(list(final_nc_data_prof["FIRMWARE_VERSION"]), (0, 32 - len(final_nc_data_prof["FIRMWARE_VERSION"])), mode='constant', constant_values=' '), dtype='S1')
+    DATA_CENTRE = nc.createVariable('DATA_CENTRE', 'S1', ('N_PROF', 'STRING2'), fill_value = " ")
+    DATA_CENTRE.long_name = "Data centre in charge of float data processing"
+    DATA_CENTRE.conventions = "Argo reference table 4"
+    DATA_CENTRE[:] = np.array(list(final_nc_data_prof["DATA_CENTRE"]), dtype='S1')
+
+    DC_REFERENCE = nc.createVariable('DC_REFERENCE', 'S1', ('N_PROF', 'STRING32'), fill_value=" ")
+    DC_REFERENCE.long_name = "Station unique identifier in data centre"
+    DC_REFERENCE.conventions = "Data centre convention"
+    DC_REFERENCE[:] = np.array(np.pad(list(final_nc_data_prof["DC_REFERENCE"]), (0, 32 - len(final_nc_data_prof["DC_REFERENCE"])), mode='constant', constant_values=' '), dtype='S1')
+
+    DATA_STATE_INDICATOR = nc.createVariable('DATA_STATE_INDICATOR', 'S1', ('N_PROF', 'STRING4'), fill_value=" ")
+    DATA_STATE_INDICATOR.long_name = "Degree of processing the data have passed through"
+    DATA_STATE_INDICATOR.conventions = "Argo reference table 6"
+    DATA_STATE_INDICATOR[:] = np.array(np.pad(list(final_nc_data_prof["DATA_STATE_INDICATOR"]), (0, 4 - len(final_nc_data_prof["DATA_STATE_INDICATOR"])), mode='constant', constant_values=' '), dtype='S1')
+    
+    DATA_MODE = nc.createVariable('DATA_MODE', 'S1', ('N_PROF'), fill_value=" ")
+    DATA_MODE.long_name = "Delayed mode or real time data"
+    DATA_MODE.conventions = "R : real time; D : delayed mode; A : real time with adjustment"
+    DATA_MODE[:] = 'D'
+    
+    PLATFORM_TYPE = nc.createVariable('PLATFORM_TYPE', 'S1', ('N_PROF', 'STRING32'), fill_value=" ")
+    PLATFORM_TYPE.long_name = "Type of float"
+    PLATFORM_TYPE.conventions = "Argo reference table 23"
+    PLATFORM_TYPE[:] = np.array(np.pad(list(final_nc_data_prof["PLATFORM_TYPE"]), (0, 32 - len(final_nc_data_prof["PLATFORM_TYPE"])), mode='constant', constant_values=' '), dtype='S1')
 
     FLOAT_SERIAL_NO = nc.createVariable('FLOAT_SERIAL_NO', 'S1', ('N_PROF', 'STRING32'), fill_value=" ")
     FLOAT_SERIAL_NO.long_name = "Serial number of the float"
     FLOAT_SERIAL_NO[:] = np.array(np.pad(list(final_nc_data_prof["FLOAT_SERIAL_NO"]), (0, 32 - len(final_nc_data_prof["FLOAT_SERIAL_NO"])), mode='constant', constant_values=' '), dtype='S1')
 
-    FORMAT_VERSION = nc.createVariable('FORMAT_VERSION', 'S1', ('STRING4'), fill_value=" ")
-    FORMAT_VERSION.long_name = "File format version"
-    FORMAT_VERSION[:] = np.array(np.pad(list(final_nc_data_prof["FORMAT_VERSION"]), (0, 4 - len(final_nc_data_prof["FORMAT_VERSION"])), mode='constant', constant_values=' '), dtype='S1')
+    FIRMWARE_VERSION = nc.createVariable('FIRMWARE_VERSION', 'S1', ('N_PROF', 'STRING32'), fill_value=" ")
+    FIRMWARE_VERSION.long_name = "Instrument firmware version"
+    FIRMWARE_VERSION[:] = np.array(np.pad(list(final_nc_data_prof["FIRMWARE_VERSION"]), (0, 32 - len(final_nc_data_prof["FIRMWARE_VERSION"])), mode='constant', constant_values=' '), dtype='S1')
 
-    HANDBOOK_VERSION = nc.createVariable('HANDBOOK_VERSION', 'S1', ('STRING4'), fill_value=" ")
-    HANDBOOK_VERSION.long_name = "Data handbook version"
-    HANDBOOK_VERSION[:] = np.array(np.pad(list(final_nc_data_prof["HANDBOOK_VERSION"]), (0, 4 - len(final_nc_data_prof["HANDBOOK_VERSION"])), mode='constant', constant_values=' '), dtype='S1')
-
-    HISTORY_ACTION = nc.createVariable('HISTORY_ACTION', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
-    HISTORY_ACTION.long_name = "Action performed on data"
-    HISTORY_ACTION.conventions = "Argo reference table 7"
-    HISTORY_ACTION[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_ACTION"]], dtype='S1')
-
-    HISTORY_DATE = nc.createVariable('HISTORY_DATE', 'S1', ('N_HISTORY', 'N_PROF', 'DATE_TIME'), fill_value=" ")
-    HISTORY_DATE.long_name = "Date the history record was created"
-    HISTORY_DATE.conventions = "YYYYMMDDHHMISS"
-    HISTORY_DATE[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_DATE"]], dtype='S1')
-
-    HISTORY_INSTITUTION = nc.createVariable('HISTORY_INSTITUTION', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
-    HISTORY_INSTITUTION.long_name = "Institution which performed action"
-    HISTORY_INSTITUTION.conventions = "Argo reference table 4"
-    HISTORY_INSTITUTION[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_INSTITUTION"]], dtype='S1')
-
-    HISTORY_PARAMETER = nc.createVariable('HISTORY_PARAMETER', 'S1', ('N_HISTORY', 'N_PROF', 'STRING16'), fill_value=" ")
-    HISTORY_PARAMETER.long_name = "Station parameter action is performed on"
-    HISTORY_PARAMETER.conventions = "Argo reference table 3"
-    HISTORY_PARAMETER[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_PARAMETER"]], dtype='S1')
-
-    HISTORY_PREVIOUS_VALUE = nc.createVariable('HISTORY_PREVIOUS_VALUE', 'f4', ('N_HISTORY', 'N_PROF'), fill_value = 99999.0)
-    HISTORY_PREVIOUS_VALUE.long_name = "Parameter/Flag previous value before action"
-    HISTORY_PREVIOUS_VALUE[:] = np.array(final_nc_data_prof["HISTORY_PREVIOUS_VALUE"])
-
-    HISTORY_QCTEST = nc.createVariable('HISTORY_QCTEST', 'S1', ('N_HISTORY', 'N_PROF', 'STRING16'), fill_value=" ")
-    HISTORY_QCTEST.long_name = "Documentation of tests performed, tests failed (in hex form)"
-    HISTORY_QCTEST.conventions = "Write tests performed when ACTION=QCP$; tests failed when ACTION=QCF$"
-    HISTORY_QCTEST[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_QCTEST"]], dtype='S1')
-
-    HISTORY_REFERENCE = nc.createVariable('HISTORY_REFERENCE', 'S1', ('N_HISTORY', 'N_PROF', 'STRING64'), fill_value=" ")
-    HISTORY_REFERENCE.long_name = "Reference of database"
-    HISTORY_REFERENCE.conventions = "Institution dependent"
-    HISTORY_REFERENCE[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_REFERENCE"]], dtype='S1')
-
-    HISTORY_SOFTWARE = nc.createVariable('HISTORY_SOFTWARE', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
-    HISTORY_SOFTWARE.long_name = "Name of software which performed action"
-    HISTORY_SOFTWARE.conventions = "Institution dependent"
-    HISTORY_SOFTWARE[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_SOFTWARE"]], dtype='S1')
-
-    HISTORY_SOFTWARE_RELEASE = nc.createVariable('HISTORY_SOFTWARE_RELEASE', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
-    HISTORY_SOFTWARE_RELEASE.long_name = "Version/release of software which performed action"
-    HISTORY_SOFTWARE_RELEASE.conventions = "Institution dependent"
-    HISTORY_SOFTWARE_RELEASE[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"]], dtype='S1')
-
-    HISTORY_START_PRES = nc.createVariable('HISTORY_START_PRES', 'f4', ('N_HISTORY', 'N_PROF'), fill_value=99999.0)
-    HISTORY_START_PRES.long_name = "Start pressure action applied on"
-    HISTORY_START_PRES.units = "decibar"
-    HISTORY_START_PRES[:] = final_nc_data_prof["HISTORY_START_PRES"].astype('f4')
-
-    HISTORY_STEP = nc.createVariable('HISTORY_STEP', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
-    HISTORY_STEP.long_name = "Step in data processing"
-    HISTORY_STEP.conventions = "Argo reference table 12"
-    HISTORY_STEP[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_STEP"]], dtype='S1')
-
-    HISTORY_STOP_PRES = nc.createVariable('HISTORY_STOP_PRES', 'f4', ('N_HISTORY', 'N_PROF'), fill_value=99999.0)
-    HISTORY_STOP_PRES.long_name = "Stop pressure action applied on"
-    HISTORY_STOP_PRES.units = "decibar"
-    HISTORY_STOP_PRES[:] = final_nc_data_prof["HISTORY_STOP_PRES"].astype('f4')
+    WMO_INST_TYPE = nc.createVariable('WMO_INST_TYPE', 'S1', ('N_PROF', 'STRING4'), fill_value=" ")
+    WMO_INST_TYPE.long_name = "Coded instrument type"
+    WMO_INST_TYPE.conventions = "Argo reference table 8"
+    WMO_INST_TYPE[:] = np.array(np.pad(list(final_nc_data_prof["WMO_INST_TYPE"]), (0, 4 - len(final_nc_data_prof["WMO_INST_TYPE"])), mode='constant', constant_values=' '), dtype='S1')
 
     JULD = nc.createVariable('JULD', 'f8', ('N_PROF'), fill_value=999999.0)
     JULD.long_name = "Julian day (UTC) of the station relative to REFERENCE_DATE_TIME"
@@ -448,17 +382,17 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     JULD.axis = "T" 
     JULD[:] = final_nc_data_prof["JULD"]
 
+    JULD_QC = nc.createVariable('JULD_QC', 'S1', ('N_PROF'), fill_value=" ")
+    JULD_QC.long_name = "Quality on date and time"
+    JULD_QC.conventions = "Argo reference table 2"
+    JULD_QC[:] = final_nc_data_prof["JULD_QC"]
+
     JULD_LOCATION = nc.createVariable('JULD_LOCATION', 'f8', ('N_PROF'), fill_value=999999.0)
     JULD_LOCATION.long_name = "Julian day (UTC) of the location relative to REFERENCE_DATE_TIME"
     JULD_LOCATION.units = "days since 1950-01-01 00:00:00 UTC"
     JULD_LOCATION.conventions = "Relative julian days with decimal part (as parts of day)"
     JULD_LOCATION.resolution = 1.1574074074074073E-5
     JULD_LOCATION[:] = final_nc_data_prof["JULD_LOCATION"]
-
-    JULD_QC = nc.createVariable('JULD_QC', 'S1', ('N_PROF'), fill_value=" ")
-    JULD_QC.long_name = "Quality on date and time"
-    JULD_QC.conventions = "Argo reference table 2"
-    JULD_QC[:] = final_nc_data_prof["JULD_QC"]
 
     LATITUDE = nc.createVariable('LATITUDE', 'f8', ('N_PROF'), fill_value=99999.0)
     LATITUDE.long_name = "Latitude of the station, best estimate"
@@ -478,45 +412,6 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     LONGITUDE.axis = "X"
     LONGITUDE[:] = final_nc_data_prof["LONGITUDE"]
 
-    NB_SAMPLE_CTD = nc.createVariable('NB_SAMPLE_CTD', 'i2', ('N_PROF', 'N_LEVELS'), fill_value=-32767)
-    NB_SAMPLE_CTD.long_name = "Number of samples in each pressure bin for the CTD"
-    NB_SAMPLE_CTD.units = "count"
-    NB_SAMPLE_CTD.C_format = "%5d"
-    NB_SAMPLE_CTD.FORTRAN_format = "I5"
-    NB_SAMPLE_CTD.resolution = np.int16(1)
-    NB_SAMPLE_CTD[:] = final_nc_data_prof["NB_SAMPLE_CTD"].astype('i2')
-
-    NB_SAMPLE_CTD_QC = nc.createVariable('NB_SAMPLE_CTD_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
-    NB_SAMPLE_CTD_QC.long_name = "quality flag"
-    NB_SAMPLE_CTD_QC.conventions = "Argo reference table 2"
-    NB_SAMPLE_CTD_QC[:] = final_nc_data_prof["NB_SAMPLE_CTD_QC"].astype('S1')
-
-    PARAMETER = nc.createVariable('PARAMETER', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'STRING16'), fill_value=" ")
-    PARAMETER.long_name = "List of parameters with calibration information"
-    PARAMETER.conventions = "Argo reference table 3"
-    PARAMETER_temp = []
-    for param in final_nc_data_prof["PARAMETER"].split(', '):
-        param_pad = np.pad(list(param), (0, 16 - len(param)), mode='constant', constant_values=' ')
-        PARAMETER_temp.append(param_pad)
-    PARAMETER_temp = np.array(PARAMETER_temp, dtype='S1')   
-    PARAMETER_val = np.full((final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"].shape[0], len(final_nc_data_prof["PARAMETER"].split(', ')), 16), ' ', dtype='S1')
-    PARAMETER_val[0, :, :] = PARAMETER_temp
-    PARAMETER[:] = PARAMETER_val
-
-    PI_NAME = nc.createVariable('PI_NAME', 'S1', ('N_PROF', 'STRING64'), fill_value=" ")
-    PI_NAME.long_name = "Name of the principal investigator"
-    PI_NAME[:] = np.array(np.pad(list(final_nc_data_prof["PI_NAME"]), (0, 64 - len(final_nc_data_prof["PI_NAME"])), mode='constant', constant_values=' '), dtype='S1')
-
-    PLATFORM_NUMBER = nc.createVariable('PLATFORM_NUMBER', 'S1', ('N_PROF', 'STRING8'), fill_value=" ")
-    PLATFORM_NUMBER.long_name = "Float unique identifier"
-    PLATFORM_NUMBER.conventions = "WMO float identifier : A9IIIII"
-    PLATFORM_NUMBER[:] = np.array(np.pad(list(final_nc_data_prof["PLATFORM_NUMBER"]), (0, 8 - len(final_nc_data_prof["PLATFORM_NUMBER"])), mode='constant', constant_values=' '), dtype='S1')
-
-    PLATFORM_TYPE = nc.createVariable('PLATFORM_TYPE', 'S1', ('N_PROF', 'STRING32'), fill_value=" ")
-    PLATFORM_TYPE.long_name = "Type of float"
-    PLATFORM_TYPE.conventions = "Argo reference table 23"
-    PLATFORM_TYPE[:] = np.array(np.pad(list(final_nc_data_prof["PLATFORM_TYPE"]), (0, 32 - len(final_nc_data_prof["PLATFORM_TYPE"])), mode='constant', constant_values=' '), dtype='S1')
-
     POSITION_QC = nc.createVariable('POSITION_QC', 'S1', ('N_PROF'), fill_value=" ")
     POSITION_QC.long_name = "Quality on position (latitude and longitude)"
     POSITION_QC.conventions = "Argo reference table 2"
@@ -525,47 +420,6 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     POSITIONING_SYSTEM = nc.createVariable('POSITIONING_SYSTEM', 'S1', ('N_PROF', 'STRING8'), fill_value=" ")
     POSITIONING_SYSTEM.long_name = "Positioning system"
     POSITIONING_SYSTEM[:] = np.array(np.pad(list(final_nc_data_prof["POSITIONING_SYSTEM"]), (0, 8 - len(final_nc_data_prof["POSITIONING_SYSTEM"])), mode='constant', constant_values=' '), dtype='S1')
-
-    PRES = nc.createVariable('PRES', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    PRES.long_name = "Sea water pressure, equals 0 at sea-level"
-    PRES.standard_name = "sea_water_pressure"
-    PRES.units = "decibar"
-    PRES.valid_min = np.float32(0.0)
-    PRES.valid_max = np.float32(12000.0)
-    PRES.C_format = "%7.1f"
-    PRES.FORTRAN_format = "F7.1"
-    PRES.resolution = np.float32(-0.001001001)
-    PRES.axis = "Z"
-    PRES[:] = final_nc_data_prof["PRES"]
-
-    PRES_ADJUSTED = nc.createVariable('PRES_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    PRES_ADJUSTED.standard_name = "sea_water_pressure"
-    PRES_ADJUSTED.long_name = "Sea water pressure, equals 0 at sea-level"
-    PRES_ADJUSTED.units = "decibar"
-    PRES_ADJUSTED.C_format = "%7.1f"
-    PRES_ADJUSTED.FORTRAN_format = "F7.1"
-    PRES_ADJUSTED.resolution = np.float32(-0.001001001)
-    PRES_ADJUSTED.valid_min = 0.0
-    PRES_ADJUSTED.valid_max = 12000.0
-    PRES_ADJUSTED[:] = final_nc_data_prof["PRES_ADJUSTED"]
-
-    PRES_ADJUSTED_ERROR = nc.createVariable('PRES_ADJUSTED_ERROR', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    PRES_ADJUSTED_ERROR.long_name = "Contains the error on the adjusted values as determined by the delayed mode QC process"
-    PRES_ADJUSTED_ERROR.units = "decibar"
-    PRES_ADJUSTED_ERROR.C_format = "%7.1f"
-    PRES_ADJUSTED_ERROR.FORTRAN_format = "F7.1"
-    PRES_ADJUSTED_ERROR.resolution = np.float32(-0.001001001)
-    PRES_ADJUSTED_ERROR[:] = final_nc_data_prof["PRES_ADJUSTED_ERROR"]
-
-    PRES_ADJUSTED_QC = nc.createVariable('PRES_ADJUSTED_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
-    PRES_ADJUSTED_QC.long_name = "quality flag"
-    PRES_ADJUSTED_QC.conventions = "Argo reference table 2"
-    PRES_ADJUSTED_QC[:] = final_nc_data_prof["PRES_ADJUSTED_QC"].astype('S1')
-
-    PRES_QC = nc.createVariable('PRES_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
-    PRES_QC.long_name = "quality flag"
-    PRES_QC.conventions = "Argo reference table 2"
-    PRES_QC[:] = final_nc_data_prof["PRES_QC"].astype('S1')
 
     PROFILE_CNDC_QC = nc.createVariable('PROFILE_CNDC_QC', 'S1', ('N_PROF'), fill_value=" ")
     PROFILE_CNDC_QC.long_name = "Global quality flag of CNDC profile"
@@ -597,116 +451,57 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     PROFILE_TEMP_QC.conventions = "Argo reference table 2a"
     PROFILE_TEMP_QC[:] = final_nc_data_prof["PROFILE_TEMP_QC"]
 
-    PROJECT_NAME = nc.createVariable('PROJECT_NAME', 'S1', ('N_PROF', 'STRING64'), fill_value=" ")
-    PROJECT_NAME.long_name = "Name of the project"
-    PROJECT_NAME[:] = np.array(np.pad(list(final_nc_data_prof["PROJECT_NAME"]), (0, 64 - len(final_nc_data_prof["PROJECT_NAME"])), mode='constant', constant_values=' '), dtype='S1')
+    VERTICAL_SAMPLING_SCHEME = nc.createVariable('VERTICAL_SAMPLING_SCHEME', 'S1', ('N_PROF', 'STRING256'), fill_value=" ")
+    VERTICAL_SAMPLING_SCHEME.long_name = "Vertical sampling scheme"
+    VERTICAL_SAMPLING_SCHEME.conventions = "Argo reference table 16"
+    VERTICAL_SAMPLING_SCHEME[:] = np.array(np.pad(list(final_nc_data_prof["VERTICAL_SAMPLING_SCHEME"]), (0, 256 - len(final_nc_data_prof["VERTICAL_SAMPLING_SCHEME"])), mode='constant', constant_values=' '), dtype='S1')
 
-    PSAL = nc.createVariable('PSAL', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    PSAL.long_name = "Practical salinity"
-    PSAL.standard_name = "sea_water_salinity"
-    PSAL.units = "psu"
-    PSAL.valid_min = np.float32(2.0)
-    PSAL.valid_max = np.float32(41.0)
-    PSAL.C_format = "%10.3f"
-    PSAL.FORTRAN_format = "F10.3"
-    PSAL.resolution = np.float32(-0.001001001)
-    PSAL[:] = final_nc_data_prof["PSAL"]
+    CONFIG_MISSION_NUMBER = nc.createVariable('CONFIG_MISSION_NUMBER', 'i4', ('N_PROF'), fill_value=99999)
+    CONFIG_MISSION_NUMBER.long_name = "Unique number denoting the missions performed by the float"
+    CONFIG_MISSION_NUMBER.conventions = "1...N, 1 : first complete mission"
+    CONFIG_MISSION_NUMBER[:] = final_nc_data_prof["CONFIG_MISSION_NUMBER"]
 
-    PSAL_ADJUSTED = nc.createVariable('PSAL_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    PSAL_ADJUSTED.long_name = "Practical salinity"
-    PSAL_ADJUSTED.standard_name = "sea_water_salinity"
-    PSAL_ADJUSTED.units = "psu"
-    PSAL_ADJUSTED.valid_min = np.float32(2.0)
-    PSAL_ADJUSTED.valid_max = np.float32(41.0)
-    PSAL_ADJUSTED.C_format = "%10.3f"
-    PSAL_ADJUSTED.FORTRAN_format = "F10.3"
-    PSAL_ADJUSTED.resolution = np.float32(-0.001001001)
-    PSAL_ADJUSTED[:] = final_nc_data_prof["PSAL_ADJUSTED"]
+    CNDC = nc.createVariable('CNDC', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    CNDC.long_name = "Electrical conductivity"
+    CNDC.standard_name = "sea_water_electrical_conductivity"
+    CNDC.units = "mhos/m"
+    CNDC.valid_min = np.float32(0.0)
+    CNDC.valid_max = np.float32(8.5)
+    CNDC.C_format = "%12.5f"
+    CNDC.FORTRAN_format = "F12.5"
+    CNDC.resolution = np.float32(1.0e-4)
+    CNDC[:] = final_nc_data_prof["CNDC"]
 
-    PSAL_ADJUSTED_ERROR = nc.createVariable('PSAL_ADJUSTED_ERROR', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    PSAL_ADJUSTED_ERROR.long_name = "Contains the error on the adjusted values as determined by the delayed mode QC process"
-    PSAL_ADJUSTED_ERROR.units = "psu"
-    PSAL_ADJUSTED_ERROR.C_format = "%10.3f"
-    PSAL_ADJUSTED_ERROR.FORTRAN_format = "F10.3"
-    PSAL_ADJUSTED_ERROR.resolution = np.float32(-0.001001001)
-    PSAL_ADJUSTED_ERROR[:] = final_nc_data_prof["PSAL_ADJUSTED_ERROR"]
+    CNDC_QC = nc.createVariable('CNDC_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value = " ")
+    CNDC_QC.long_name = "quality flag"
+    CNDC_QC.conventions = "Argo reference table 2"
+    CNDC_QC[:] = final_nc_data_prof["CNDC_QC"]
 
-    PSAL_ADJUSTED_QC = nc.createVariable('PSAL_ADJUSTED_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
-    PSAL_ADJUSTED_QC.long_name = "quality flag"
-    PSAL_ADJUSTED_QC.conventions = "Argo reference table 2"
-    PSAL_ADJUSTED_QC[:] = final_nc_data_prof["PSAL_ADJUSTED_QC"].astype('S1')
+    # ############################################################################
+    # CNDC_ADJUSTED = nc.createVariable('CNDC_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    # CNDC_ADJUSTED.long_name = "Electrical conductivity"
+    # CNDC_ADJUSTED.standard_name = "sea_water_electrical_conductivity"
+    # CNDC_ADJUSTED.units = "mhos/m"
+    # CNDC_ADJUSTED.valid_min = np.float32(0.0)
+    # CNDC_ADJUSTED.valid_max = np.float32(8.5)
+    # CNDC_ADJUSTED.C_format = "%12.5f"
+    # CNDC_ADJUSTED.FORTRAN_format = "F12.5"
+    # CNDC_ADJUSTED.resolution = np.float32(1.0e-4)
+    # CNDC_ADJUSTED[:] = final_nc_data_prof["CNDC"]
 
-    PSAL_QC = nc.createVariable('PSAL_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
-    PSAL_QC.long_name = "quality flag"
-    PSAL_QC.conventions = "Argo reference table 2"
-    PSAL_QC[:] = final_nc_data_prof["PSAL_QC"].astype('S1')
+    # CNDC_ADJUSTED_ERROR = nc.createVariable('CNDC_ADJUSTED_ERROR', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    # CNDC_ADJUSTED_ERROR.long_name = "Contains the error on the adjusted values as determined by the delayed mode QC process"
+    # CNDC_ADJUSTED_ERROR.units = "mhos/m"
+    # CNDC_ADJUSTED_ERROR.C_format = "%7.1f"
+    # CNDC_ADJUSTED_ERROR.FORTRAN_format = "F7.1"
+    # CNDC_ADJUSTED_ERROR.resolution = np.float32(-0.02)
+    # CNDC_ADJUSTED_ERROR[:] = final_nc_data_prof["PRES_ADJUSTED_ERROR"]
 
-    REFERENCE_DATE_TIME = nc.createVariable('REFERENCE_DATE_TIME', 'S1', ('DATE_TIME'), fill_value=" ")
-    REFERENCE_DATE_TIME.long_name = "Date of reference for Julian days"
-    REFERENCE_DATE_TIME.conventions = "YYYYMMDDHHMISS"
-    REFERENCE_DATE_TIME[:] = np.array(list(final_nc_data_prof["REFERENCE_DATE_TIME"]), dtype='S1')
-
-    SCIENTIFIC_CALIB_COEFFICIENT = nc.createVariable('SCIENTIFIC_CALIB_COEFFICIENT', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'STRING256'), fill_value=" ")
-    SCIENTIFIC_CALIB_COEFFICIENT.long_name = "Calibration coefficients for this equation"
-    SCIENTIFIC_CALIB_COEFFICIENT[:] = final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"]
-
-    SCIENTIFIC_CALIB_COMMENT = nc.createVariable('SCIENTIFIC_CALIB_COMMENT', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'STRING256'), fill_value=" ")
-    SCIENTIFIC_CALIB_COMMENT.long_name = "Comment applying to this parameter calibration"
-    SCIENTIFIC_CALIB_COMMENT[:] = final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"]
-
-    SCIENTIFIC_CALIB_DATE = nc.createVariable('SCIENTIFIC_CALIB_DATE', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'DATE_TIME'), fill_value=" ")
-    SCIENTIFIC_CALIB_DATE.long_name = "Date of calibration"
-    SCIENTIFIC_CALIB_DATE.conventions = "YYYYMMDDHHMISS"
-    SCIENTIFIC_CALIB_DATE[:] = final_nc_data_prof["SCIENTIFIC_CALIB_DATE"]
-
-    SCIENTIFIC_CALIB_EQUATION = nc.createVariable('SCIENTIFIC_CALIB_EQUATION', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'STRING256'), fill_value=" ")
-    SCIENTIFIC_CALIB_EQUATION.long_name = "Calibration equation for this parameter"
-    SCIENTIFIC_CALIB_EQUATION[:] = final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"]
-
-    STATION_PARAMETERS = nc.createVariable('STATION_PARAMETERS', 'S1', ('N_PROF', 'N_PARAM', 'STRING16'), fill_value=" ")
-    STATION_PARAMETERS.long_name = "List of available parameters for the station"
-    STATION_PARAMETERS.conventions = "Argo reference table 3"
-    STATION_PARAMETER_temp = []
-    for param in final_nc_data_prof["STATION_PARAMETERS"].split(', '):
-        param_pad = np.pad(list(param), (0, 16 - len(param)), mode='constant', constant_values=' ')
-        STATION_PARAMETER_temp.append(param_pad)
-    STATION_PARAMETERS[:] = np.array(PARAMETER_temp, dtype='S1')   
-
-    TEMP = nc.createVariable('TEMP', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    TEMP.long_name = "Sea temperature in-situ ITS-90 scale"
-    TEMP.standard_name = "sea_water_temperature"
-    TEMP.units = "degree_Celsius"
-    TEMP.valid_min = np.float32(-2.5)
-    TEMP.valid_max = np.float32(40.0)
-    TEMP.C_format = "%10.3f"
-    TEMP.FORTRAN_format = "F10.3"
-    TEMP.resolution = np.float32(-0.001001001)
-    TEMP[:] = final_nc_data_prof["TEMP"]
-
-    TEMP_ADJUSTED = nc.createVariable('TEMP_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    TEMP_ADJUSTED.long_name = "Sea temperature in-situ ITS-90 scale"
-    TEMP_ADJUSTED.standard_name = "sea_water_temperature"
-    TEMP_ADJUSTED.units = "degree_Celsius"
-    TEMP_ADJUSTED.valid_min = np.float32(-2.5)
-    TEMP_ADJUSTED.valid_max = np.float32(40.0)
-    TEMP_ADJUSTED.C_format = "%10.3f"
-    TEMP_ADJUSTED.FORTRAN_format = "F10.3"
-    TEMP_ADJUSTED.resolution = np.float32(-0.001001001)
-    TEMP_ADJUSTED[:] = final_nc_data_prof["TEMP_ADJUSTED"]
-
-    TEMP_ADJUSTED_ERROR = nc.createVariable('TEMP_ADJUSTED_ERROR', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
-    TEMP_ADJUSTED_ERROR.long_name = "Contains the error on the adjusted values as determined by the delayed mode QC process"
-    TEMP_ADJUSTED_ERROR.standard_name = "sea_water_temperature"
-    TEMP_ADJUSTED_ERROR.units = "degree_Celsius"
-    TEMP_ADJUSTED_ERROR.C_format = "%10.3f"
-    TEMP_ADJUSTED_ERROR.FORTRAN_format = "F10.3"
-    TEMP_ADJUSTED_ERROR.resolution = np.float32(-0.001001001)
-    TEMP_ADJUSTED_ERROR[:] = final_nc_data_prof["TEMP_ADJUSTED_ERROR"]
-
-    TEMP_ADJUSTED_QC = nc.createVariable('TEMP_ADJUSTED_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
-    TEMP_ADJUSTED_QC.long_name = "quality flag"
-    TEMP_ADJUSTED_QC.conventions = "Argo reference table 2"
-    TEMP_ADJUSTED_QC[:] = final_nc_data_prof["TEMP_ADJUSTED_QC"].astype('S1')
+    # CNDC_ADJUSTED_QC = nc.createVariable('CNDC_ADJUSTED_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value = " ")
+    # CNDC_ADJUSTED_QC.long_name = "quality flag"
+    # CNDC_ADJUSTED_QC.conventions = "Argo reference table 2"
+    # CNDC_ADJUSTED_QC[:] = final_nc_data_prof["CNDC_QC"]
+    # ############################################################################
 
     TEMP_CNDC = nc.createVariable('TEMP_CNDC', 'f4', ('N_PROF', 'N_LEVELS'), fill_value= 99999.0)
     TEMP_CNDC.long_name = "Internal temperature of the conductivity cell"
@@ -721,22 +516,235 @@ def make_final_nc_files(final_nc_data_prof, float_num, dest_filepath):
     TEMP_CNDC_QC = nc.createVariable('TEMP_CNDC_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value= " ")
     TEMP_CNDC_QC.long_name = "quality flag"
     TEMP_CNDC_QC.conventions = "Argo reference table 2"
-    TEMP_CNDC_QC[:] = final_nc_data_prof["TEMP_CNDC_QC"].astype('S1')
+    TEMP_CNDC_QC[:] = final_nc_data_prof["TEMP_CNDC_QC"]
+
+    ############################################################################
+    # NB_SAMPLE_CTD = nc.createVariable('NB_SAMPLE_CTD', 'i2', ('N_PROF', 'N_LEVELS'), fill_value=0)
+    NB_SAMPLE_CTD = nc.createVariable('NB_SAMPLE_CTD', 'i2', ('N_PROF', 'N_LEVELS'), fill_value=-32767)
+    ############################################################################
+    NB_SAMPLE_CTD.long_name = "Number of samples in each pressure bin for the CTD"
+    NB_SAMPLE_CTD.units = "count"
+    NB_SAMPLE_CTD.C_format = "%5d"
+    NB_SAMPLE_CTD.FORTRAN_format = "I5"
+    NB_SAMPLE_CTD.resolution = np.int16(1)
+    NB_SAMPLE_CTD[:] = final_nc_data_prof["NB_SAMPLE_CTD"].astype('i2')
+
+    NB_SAMPLE_CTD_QC = nc.createVariable('NB_SAMPLE_CTD_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
+    NB_SAMPLE_CTD_QC.long_name = "quality flag"
+    NB_SAMPLE_CTD_QC.conventions = "Argo reference table 2"
+    NB_SAMPLE_CTD_QC[:] = final_nc_data_prof["NB_SAMPLE_CTD_QC"]
+
+    PRES = nc.createVariable('PRES', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    PRES.long_name = "Sea water pressure, equals 0 at sea-level"
+    PRES.standard_name = "sea_water_pressure"
+    PRES.units = "decibar"
+    PRES.valid_min = np.float32(0.0)
+    PRES.valid_max = np.float32(12000.0)
+    PRES.C_format = "%7.1f"
+    PRES.FORTRAN_format = "F7.1"
+    PRES.resolution = np.float32(0.02)
+    PRES.axis = "Z"
+    PRES[:] = final_nc_data_prof["PRES"]
+            
+    PRES_QC = nc.createVariable('PRES_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
+    PRES_QC.long_name = "quality flag"
+    PRES_QC.conventions = "Argo reference table 2"
+    PRES_QC[:] = final_nc_data_prof["PRES_QC"]
+
+    PRES_ADJUSTED = nc.createVariable('PRES_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    PRES_ADJUSTED.standard_name = "sea_water_pressure"
+    PRES_ADJUSTED.long_name = "Sea water pressure, equals 0 at sea-level"
+    PRES_ADJUSTED.units = "decibar"
+    PRES_ADJUSTED.C_format = "%7.1f"
+    PRES_ADJUSTED.FORTRAN_format = "F7.1"
+    PRES_ADJUSTED.resolution = np.float32(-0.02)
+    PRES_ADJUSTED.valid_min = 0.0
+    PRES_ADJUSTED.valid_max = 12000.0
+    PRES_ADJUSTED[:] = final_nc_data_prof["PRES_ADJUSTED"]
+
+    PRES_ADJUSTED_QC = nc.createVariable('PRES_ADJUSTED_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
+    PRES_ADJUSTED_QC.long_name = "quality flag"
+    PRES_ADJUSTED_QC.conventions = "Argo reference table 2"
+    PRES_ADJUSTED_QC[:] = final_nc_data_prof["PRES_ADJUSTED_QC"]
+
+    PRES_ADJUSTED_ERROR = nc.createVariable('PRES_ADJUSTED_ERROR', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    PRES_ADJUSTED_ERROR.long_name = "Contains the error on the adjusted values as determined by the delayed mode QC process"
+    PRES_ADJUSTED_ERROR.units = "decibar"
+    PRES_ADJUSTED_ERROR.C_format = "%7.1f"
+    PRES_ADJUSTED_ERROR.FORTRAN_format = "F7.1"
+    PRES_ADJUSTED_ERROR.resolution = np.float32(-0.02)
+    PRES_ADJUSTED_ERROR[:] = final_nc_data_prof["PRES_ADJUSTED_ERROR"]
+
+    PSAL = nc.createVariable('PSAL', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    PSAL.long_name = "Practical salinity"
+    PSAL.standard_name = "sea_water_salinity"
+    PSAL.units = "psu"
+    PSAL.valid_min = np.float32(2.0)
+    PSAL.valid_max = np.float32(41.0)
+    PSAL.C_format = "%10.3f"
+    PSAL.FORTRAN_format = "F10.3"
+    PSAL.resolution = np.float32(0.001)
+    PSAL[:] = final_nc_data_prof["PSAL"]
+ 
+    PSAL_QC = nc.createVariable('PSAL_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
+    PSAL_QC.long_name = "quality flag"
+    PSAL_QC.conventions = "Argo reference table 2"
+    PSAL_QC[:] = final_nc_data_prof["PSAL_QC"]
+
+    PSAL_ADJUSTED = nc.createVariable('PSAL_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    PSAL_ADJUSTED.long_name = "Practical salinity"
+    PSAL_ADJUSTED.standard_name = "sea_water_salinity"
+    PSAL_ADJUSTED.units = "psu"
+    PSAL_ADJUSTED.valid_min = np.float32(2.0)
+    PSAL_ADJUSTED.valid_max = np.float32(41.0)
+    PSAL_ADJUSTED.C_format = "%10.3f"
+    PSAL_ADJUSTED.FORTRAN_format = "F10.3"
+    PSAL_ADJUSTED.resolution = np.float32(-0.001)
+    PSAL_ADJUSTED[:] = final_nc_data_prof["PSAL_ADJUSTED"]
+
+    PSAL_ADJUSTED_QC = nc.createVariable('PSAL_ADJUSTED_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
+    PSAL_ADJUSTED_QC.long_name = "quality flag"
+    PSAL_ADJUSTED_QC.conventions = "Argo reference table 2"
+    PSAL_ADJUSTED_QC[:] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
+
+    PSAL_ADJUSTED_ERROR = nc.createVariable('PSAL_ADJUSTED_ERROR', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    PSAL_ADJUSTED_ERROR.long_name = "Contains the error on the adjusted values as determined by the delayed mode QC process"
+    PSAL_ADJUSTED_ERROR.units = "psu"
+    PSAL_ADJUSTED_ERROR.C_format = "%10.3f"
+    PSAL_ADJUSTED_ERROR.FORTRAN_format = "F10.3"
+    PSAL_ADJUSTED_ERROR.resolution = np.float32(-0.001)
+    PSAL_ADJUSTED_ERROR[:] = final_nc_data_prof["PSAL_ADJUSTED_ERROR"]
+
+    TEMP = nc.createVariable('TEMP', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    TEMP.long_name = "Sea temperature in-situ ITS-90 scale"
+    TEMP.standard_name = "sea_water_temperature"
+    TEMP.units = "degree_Celsius"
+    TEMP.valid_min = np.float32(-2.5)
+    TEMP.valid_max = np.float32(40.0)
+    TEMP.C_format = "%10.3f"
+    TEMP.FORTRAN_format = "F10.3"
+    TEMP.resolution = np.float32(0.00005)
+    TEMP[:] = final_nc_data_prof["TEMP"]
 
     TEMP_QC = nc.createVariable('TEMP_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value= " ")
     TEMP_QC.long_name = "quality flag"
     TEMP_QC.conventions = "Argo reference table 2"
-    TEMP_QC[:] = final_nc_data_prof["TEMP_QC"].astype('S1')
+    TEMP_QC[:] = final_nc_data_prof["TEMP_QC"]
 
-    VERTICAL_SAMPLING_SCHEME = nc.createVariable('VERTICAL_SAMPLING_SCHEME', 'S1', ('N_PROF', 'STRING256'), fill_value=" ")
-    VERTICAL_SAMPLING_SCHEME.long_name = "Vertical sampling scheme"
-    VERTICAL_SAMPLING_SCHEME.conventions = "Argo reference table 16"
-    VERTICAL_SAMPLING_SCHEME[:] = np.array(np.pad(list(final_nc_data_prof["VERTICAL_SAMPLING_SCHEME"]), (0, 256 - len(final_nc_data_prof["VERTICAL_SAMPLING_SCHEME"])), mode='constant', constant_values=' '), dtype='S1')
+    TEMP_ADJUSTED = nc.createVariable('TEMP_ADJUSTED', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    TEMP_ADJUSTED.long_name = "Sea temperature in-situ ITS-90 scale"
+    TEMP_ADJUSTED.standard_name = "sea_water_temperature"
+    TEMP_ADJUSTED.units = "degree_Celsius"
+    TEMP_ADJUSTED.valid_min = np.float32(-2.5)
+    TEMP_ADJUSTED.valid_max = np.float32(40.0)
+    TEMP_ADJUSTED.C_format = "%10.3f"
+    TEMP_ADJUSTED.FORTRAN_format = "F10.3"
+    TEMP_ADJUSTED.resolution = np.float32(-0.00005)
+    TEMP_ADJUSTED[:] = final_nc_data_prof["TEMP_ADJUSTED"]
 
-    WMO_INST_TYPE = nc.createVariable('WMO_INST_TYPE', 'S1', ('N_PROF', 'STRING4'), fill_value=" ")
-    WMO_INST_TYPE.long_name = "Coded instrument type"
-    WMO_INST_TYPE.conventions = "Argo reference table 8"
-    WMO_INST_TYPE[:] = np.array(np.pad(list(final_nc_data_prof["WMO_INST_TYPE"]), (0, 4 - len(final_nc_data_prof["WMO_INST_TYPE"])), mode='constant', constant_values=' '), dtype='S1')
+    TEMP_ADJUSTED_QC = nc.createVariable('TEMP_ADJUSTED_QC', 'S1', ('N_PROF', 'N_LEVELS'), fill_value=" ")
+    TEMP_ADJUSTED_QC.long_name = "quality flag"
+    TEMP_ADJUSTED_QC.conventions = "Argo reference table 2"
+    TEMP_ADJUSTED_QC[:] = final_nc_data_prof["TEMP_ADJUSTED_QC"]
+
+    TEMP_ADJUSTED_ERROR = nc.createVariable('TEMP_ADJUSTED_ERROR', 'f4', ('N_PROF', 'N_LEVELS'), fill_value=99999.0)
+    TEMP_ADJUSTED_ERROR.long_name = "Contains the error on the adjusted values as determined by the delayed mode QC process"
+    TEMP_ADJUSTED_ERROR.standard_name = "sea_water_temperature"
+    TEMP_ADJUSTED_ERROR.units = "degree_Celsius"
+    TEMP_ADJUSTED_ERROR.C_format = "%10.3f"
+    TEMP_ADJUSTED_ERROR.FORTRAN_format = "F10.3"
+    TEMP_ADJUSTED_ERROR.resolution = np.float32(-0.00005)
+    TEMP_ADJUSTED_ERROR[:] = final_nc_data_prof["TEMP_ADJUSTED_ERROR"]
+
+    PARAMETER = nc.createVariable('PARAMETER', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'STRING16'), fill_value=" ")
+    PARAMETER.long_name = "List of parameters with calibration information"
+    PARAMETER.conventions = "Argo reference table 3"
+    PARAMETER_temp = []
+    for param in final_nc_data_prof["PARAMETER"].split(', '):
+        param_pad = np.pad(list(param), (0, 16 - len(param)), mode='constant', constant_values=' ')
+        PARAMETER_temp.append(param_pad)
+    PARAMETER_temp = np.array(PARAMETER_temp, dtype='S1')   
+    PARAMETER_val = np.full((final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"].shape[0], len(final_nc_data_prof["PARAMETER"].split(', ')), 16), ' ', dtype='S1')
+    PARAMETER_val[0, :, :] = PARAMETER_temp
+    PARAMETER[:] = PARAMETER_val
+
+    SCIENTIFIC_CALIB_EQUATION = nc.createVariable('SCIENTIFIC_CALIB_EQUATION', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'STRING256'), fill_value=" ")
+    SCIENTIFIC_CALIB_EQUATION.long_name = "Calibration equation for this parameter"
+    SCIENTIFIC_CALIB_EQUATION[:] = final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"]
+
+    SCIENTIFIC_CALIB_COEFFICIENT = nc.createVariable('SCIENTIFIC_CALIB_COEFFICIENT', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'STRING256'), fill_value=" ")
+    SCIENTIFIC_CALIB_COEFFICIENT.long_name = "Calibration coefficients for this equation"
+    SCIENTIFIC_CALIB_COEFFICIENT[:] = final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"]
+
+    SCIENTIFIC_CALIB_COMMENT = nc.createVariable('SCIENTIFIC_CALIB_COMMENT', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'STRING256'), fill_value=" ")
+    SCIENTIFIC_CALIB_COMMENT.long_name = "Comment applying to this parameter calibration"
+    SCIENTIFIC_CALIB_COMMENT[:] = final_nc_data_prof["SCIENTIFIC_CALIB_COMMENT"]
+
+    SCIENTIFIC_CALIB_DATE = nc.createVariable('SCIENTIFIC_CALIB_DATE', 'S1', ('N_PROF', 'N_CALIB', 'N_PARAM', 'DATE_TIME'), fill_value=" ")
+    SCIENTIFIC_CALIB_DATE.long_name = "Date of calibration"
+    SCIENTIFIC_CALIB_DATE.conventions = "YYYYMMDDHHMISS"
+    SCIENTIFIC_CALIB_DATE[:] = final_nc_data_prof["SCIENTIFIC_CALIB_DATE"]
+
+    HISTORY_INSTITUTION = nc.createVariable('HISTORY_INSTITUTION', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
+    HISTORY_INSTITUTION.long_name = "Institution which performed action"
+    HISTORY_INSTITUTION.conventions = "Argo reference table 4"
+    HISTORY_INSTITUTION[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_INSTITUTION"]], dtype='S1')
+
+    HISTORY_STEP = nc.createVariable('HISTORY_STEP', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
+    HISTORY_STEP.long_name = "Step in data processing"
+    HISTORY_STEP.conventions = "Argo reference table 12"
+    HISTORY_STEP[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_STEP"]], dtype='S1')
+
+    HISTORY_SOFTWARE = nc.createVariable('HISTORY_SOFTWARE', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
+    HISTORY_SOFTWARE.long_name = "Name of software which performed action"
+    HISTORY_SOFTWARE.conventions = "Institution dependent"
+    HISTORY_SOFTWARE[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_SOFTWARE"]], dtype='S1')
+
+    HISTORY_SOFTWARE_RELEASE = nc.createVariable('HISTORY_SOFTWARE_RELEASE', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
+    HISTORY_SOFTWARE_RELEASE.long_name = "Version/release of software which performed action"
+    HISTORY_SOFTWARE_RELEASE.conventions = "Institution dependent"
+    HISTORY_SOFTWARE_RELEASE[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"]], dtype='S1')
+
+    HISTORY_REFERENCE = nc.createVariable('HISTORY_REFERENCE', 'S1', ('N_HISTORY', 'N_PROF', 'STRING64'), fill_value=" ")
+    HISTORY_REFERENCE.long_name = "Reference of database"
+    HISTORY_REFERENCE.conventions = "Institution dependent"
+    HISTORY_REFERENCE[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_REFERENCE"]], dtype='S1')
+
+    HISTORY_DATE = nc.createVariable('HISTORY_DATE', 'S1', ('N_HISTORY', 'N_PROF', 'DATE_TIME'), fill_value=" ")
+    HISTORY_DATE.long_name = "Date the history record was created"
+    HISTORY_DATE.conventions = "YYYYMMDDHHMISS"
+    HISTORY_DATE[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_DATE"]], dtype='S1')
+   
+    HISTORY_ACTION = nc.createVariable('HISTORY_ACTION', 'S1', ('N_HISTORY', 'N_PROF', 'STRING4'), fill_value=" ")
+    HISTORY_ACTION.long_name = "Action performed on data"
+    HISTORY_ACTION.conventions = "Argo reference table 7"
+    HISTORY_ACTION[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_ACTION"]], dtype='S1')
+
+    HISTORY_PARAMETER = nc.createVariable('HISTORY_PARAMETER', 'S1', ('N_HISTORY', 'N_PROF', 'STRING16'), fill_value=" ")
+    HISTORY_PARAMETER.long_name = "Station parameter action is performed on"
+    HISTORY_PARAMETER.conventions = "Argo reference table 3"
+    HISTORY_PARAMETER[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_PARAMETER"]], dtype='S1')
+
+    HISTORY_START_PRES = nc.createVariable('HISTORY_START_PRES', 'f4', ('N_HISTORY', 'N_PROF'), fill_value=99999.0)
+    HISTORY_START_PRES.long_name = "Start pressure action applied on"
+    HISTORY_START_PRES.units = "decibar"
+    HISTORY_START_PRES[:] = final_nc_data_prof["HISTORY_START_PRES"].astype('f4')
+
+    HISTORY_STOP_PRES = nc.createVariable('HISTORY_STOP_PRES', 'f4', ('N_HISTORY', 'N_PROF'), fill_value=99999.0)
+    HISTORY_STOP_PRES.long_name = "Stop pressure action applied on"
+    HISTORY_STOP_PRES.units = "decibar"
+    HISTORY_STOP_PRES[:] = final_nc_data_prof["HISTORY_STOP_PRES"].astype('f4')
+
+    HISTORY_PREVIOUS_VALUE = nc.createVariable('HISTORY_PREVIOUS_VALUE', 'f4', ('N_HISTORY', 'N_PROF'), fill_value = 99999.0)
+    HISTORY_PREVIOUS_VALUE.long_name = "Parameter/Flag previous value before action"
+    HISTORY_PREVIOUS_VALUE[:] = np.array(final_nc_data_prof["HISTORY_PREVIOUS_VALUE"])
+
+    HISTORY_QCTEST = nc.createVariable('HISTORY_QCTEST', 'S1', ('N_HISTORY', 'N_PROF', 'STRING16'), fill_value=" ")
+    HISTORY_QCTEST.long_name = "Documentation of tests performed, tests failed (in hex form)"
+    HISTORY_QCTEST.conventions = "Write tests performed when ACTION=QCP$; tests failed when ACTION=QCF$"
+    HISTORY_QCTEST[:] = np.array([list(element) for element in final_nc_data_prof["HISTORY_QCTEST"]], dtype='S1')
+
+    nc.close()
 
 def calc_overall_profile_qc(qc_arr):
     """
@@ -766,30 +774,76 @@ def calc_overall_profile_qc(qc_arr):
     else:
         return 'F'
 
-def format_argo_data(argo_data):
+def convert_qc_to_s1(qc_array):
+    qc_str = np.where(np.isnan(qc_array), " ", qc_array.astype(int).astype(str))
+    return qc_str.astype("S1")
+
+def format_argo_data(data, step):
     """
     Function to format ARGO data before delayed mode processing. 
     Procedures include:
-        - for all QC arr's flip 0's to 1's
+        - 1: for all QC arr's flip 0's to 1's
+        - 2: for all arrs, turn nans to FILLVALs, and where PARAM_ADJUSTED_QC = 4 or 9, PARAM_ADJUSTED + PARAM_ADJUSTED_ERROR = FillVal
     Args:
-        argo_data (dict): dictionary of all associated parameters needed to generate delayed mode file.
+        data (dict): dictionary of all associated parameters needed to generate delayed mode file.
 
     Returns:
-        dict: argo_data reformatted 
+        dict: data reformatted 
     """
 
-    # For all QC arr's flip 0's to 1's
-    argo_data["JULD_QC"][argo_data["JULD_QC"] == 0] = 1
-    argo_data["JULD_QC"][np.isnan(argo_data["JULD_QC"])] = 1
-    argo_data["POSITION_QC"][argo_data["POSITION_QC"] == 0] = 1
-    argo_data["POSITION_QC"][np.isnan(argo_data["POSITION_QC"])] = 1
-    argo_data["PRES_ADJUSTED_QC"][argo_data["PRES_ADJUSTED_QC"] == 0] = 1
-    argo_data["PSAL_ADJUSTED_QC"][argo_data["PSAL_ADJUSTED_QC"] == 0] = 1
-    argo_data["TEMP_ADJUSTED_QC"][argo_data["TEMP_ADJUSTED_QC"] == 0] = 1
-    argo_data["TEMP_CNDC_QC"][argo_data["TEMP_CNDC_QC"] == 0] = 1
-    argo_data["NB_SAMPLE_CTD_QC"][argo_data["NB_SAMPLE_CTD_QC"] == 0] = 1
+    if step == 1:
+        # For all QC arr's flip 0's to 1's
+        data["JULD_QC"][data["JULD_QC"] == 0] = 1
+        data["JULD_QC"][np.isnan(data["JULD_QC"])] = 1
+        data["POSITION_QC"][data["POSITION_QC"] == 0] = 1
+        data["POSITION_QC"][np.isnan(data["POSITION_QC"])] = 1
+        data["PRES_ADJUSTED_QC"][data["PRES_ADJUSTED_QC"] == 0] = 1
+        data["PSAL_ADJUSTED_QC"][data["PSAL_ADJUSTED_QC"] == 0] = 1
+        data["TEMP_ADJUSTED_QC"][data["TEMP_ADJUSTED_QC"] == 0] = 1
+        data["TEMP_CNDC_QC"][data["TEMP_CNDC_QC"] == 0] = 1
+        data["NB_SAMPLE_CTD_QC"][data["NB_SAMPLE_CTD_QC"] == 0] = 1
 
-    return argo_data
+    if step == 2:
+        # PARAM_ADJUSTED_QC = 4 or 9, PARAM_ADJUSTED + PARAM_ADJUSTED_ERROR = FillVal
+        pres_mask = (data["PRES_ADJUSTED_QC"] == 4) | (data["PRES_ADJUSTED_QC"] == 9)
+        data["PRES_ADJUSTED"][pres_mask] = 99999.0
+        data["PRES_ADJUSTED_ERROR"][pres_mask] = 99999.0
+        
+        psal_mask = (data["PSAL_ADJUSTED_QC"] == 4) | (data["PSAL_ADJUSTED_QC"] == 9)
+        data["PSAL_ADJUSTED"][psal_mask] = 99999.0
+        data["PSAL_ADJUSTED_ERROR"][psal_mask] = 99999.0
+        
+        temp_mask = (data["TEMP_ADJUSTED_QC"] == 4) | (data["TEMP_ADJUSTED_QC"] == 9)
+        data["TEMP_ADJUSTED"][temp_mask] = 99999.0
+        data["TEMP_ADJUSTED_ERROR"][temp_mask] = 99999.0
+
+        # turn NaN's to fill vals
+        data["NB_SAMPLE_CTD"][np.isnan(data["NB_SAMPLE_CTD"])] = 0
+        data["CNDC"][np.isnan(data["CNDC"])] = 99999.0
+        data["TEMP_CNDC"][np.isnan(data["TEMP_CNDC"])] = 99999.0
+
+        data["PRES"][np.isnan(data["PRES"])] = 99999.0
+        data["PRES_ADJUSTED"][np.isnan(data["PRES_ADJUSTED"])] = 99999.0
+        data["PRES_ADJUSTED_ERROR"][np.isnan(data["PRES_ADJUSTED_ERROR"])] = 99999.0
+
+        data["PSAL"][np.isnan(data["PSAL"])] = 99999.0
+        data["PSAL_ADJUSTED"][np.isnan(data["PSAL_ADJUSTED"])] = 99999.0
+        data["PSAL_ADJUSTED_ERROR"][np.isnan(data["PSAL_ADJUSTED_ERROR"])] = 99999.0
+
+        data["TEMP"][np.isnan(data["TEMP"])] = 99999.0
+        data["TEMP_ADJUSTED"][np.isnan(data["TEMP_ADJUSTED"])] = 99999.0
+        data["TEMP_ADJUSTED_ERROR"][np.isnan(data["TEMP_ADJUSTED_ERROR"])] = 99999.0
+
+        # convert QC arrs to S1 type + turn nans into fillval
+        data["JULD_QC"] = convert_qc_to_s1(data["JULD_QC"])
+        data["POSITION_QC"] = convert_qc_to_s1(data["POSITION_QC"])
+        data["PRES_ADJUSTED_QC"] = convert_qc_to_s1(data["PRES_ADJUSTED_QC"])
+        data["PSAL_ADJUSTED_QC"] = convert_qc_to_s1(data["PSAL_ADJUSTED_QC"])
+        data["TEMP_ADJUSTED_QC"] = convert_qc_to_s1(data["TEMP_ADJUSTED_QC"])
+        data["TEMP_CNDC_QC"] = convert_qc_to_s1(data["TEMP_CNDC_QC"])
+        data["NB_SAMPLE_CTD_QC"] = convert_qc_to_s1(data["NB_SAMPLE_CTD_QC"])
+
+    return data
 
 def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
     """_summary_
@@ -807,26 +861,6 @@ def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
         final_nc_data_prof["HISTORY_DATE"] = np.array(list(str(datetime.now().strftime("%Y%m%d%H%M%S"))))
     else:
         final_nc_data_prof["HISTORY_DATE"] = np.vstack([final_nc_data_prof["HISTORY_DATE"], np.array(list(str(datetime.now().strftime("%Y%m%d%H%M%S"))))])
-    
-    if final_nc_data_prof["HISTORY_INSTITUTION"] is None:
-        final_nc_data_prof["HISTORY_INSTITUTION"] = np.array(list('JP  '))
-    else:
-        final_nc_data_prof["HISTORY_INSTITUTION"] = np.vstack([final_nc_data_prof["HISTORY_INSTITUTION"], np.array(list('JP  '))])
-    
-    if final_nc_data_prof["HISTORY_STEP"] is None:
-        final_nc_data_prof["HISTORY_STEP"] = np.array(list('ARSQ'))
-    else:
-        final_nc_data_prof["HISTORY_STEP"] = np.vstack([final_nc_data_prof["HISTORY_STEP"], np.array(list('ARSQ'))])
-    
-    if final_nc_data_prof['HISTORY_SOFTWARE'] is None:
-        final_nc_data_prof['HISTORY_SOFTWARE'] =  np.array(list('DMPS'))
-    else:
-        final_nc_data_prof['HISTORY_SOFTWARE'] = np.vstack([final_nc_data_prof["HISTORY_SOFTWARE"], np.array(list('DMPS'))])
-    
-    if final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] is None:
-        final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] = np.array(list('B_V0'))
-    else:
-        final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] = np.vstack([final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"], np.array(list('B_V0'))])
 
     # PAREMS that are sometimes set
     # if these PAREMS are not set, we fill the data w/ empty vals
@@ -834,12 +868,12 @@ def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
         for parem in parems_to_fill:
             if parem == 'HISTORY_START_PRES':
                 if final_nc_data_prof['HISTORY_START_PRES'] is None:
-                    final_nc_data_prof['HISTORY_START_PRES'] = 99999.0
+                    final_nc_data_prof['HISTORY_START_PRES'] = np.asarray(99999.0)
                 else:
                     final_nc_data_prof['HISTORY_START_PRES'] = np.append(final_nc_data_prof["HISTORY_START_PRES"], 99999.0)
             elif parem == 'HISTORY_STOP_PRES':
                 if final_nc_data_prof['HISTORY_STOP_PRES'] is None:
-                    final_nc_data_prof['HISTORY_STOP_PRES'] = 99999.0
+                    final_nc_data_prof['HISTORY_STOP_PRES'] = np.asarray(99999.0)
                 else:
                     final_nc_data_prof['HISTORY_STOP_PRES'] = np.append(final_nc_data_prof["HISTORY_STOP_PRES"], 99999.0)
             elif parem == 'HISTORY_QCTEST':
@@ -854,7 +888,7 @@ def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
                     final_nc_data_prof['HISTORY_PARAMETER'] = np.vstack([final_nc_data_prof["HISTORY_PARAMETER"], np.array(list(' ' * 16))])
             elif parem == 'HISTORY_PREVIOUS_VALUE':
                 if final_nc_data_prof['HISTORY_PREVIOUS_VALUE'] is None:
-                    final_nc_data_prof['HISTORY_PREVIOUS_VALUE'] = 99999.0
+                    final_nc_data_prof['HISTORY_PREVIOUS_VALUE'] = np.asarray(99999.0)
                 else:
                     final_nc_data_prof['HISTORY_PREVIOUS_VALUE'] = np.append(final_nc_data_prof["HISTORY_PREVIOUS_VALUE"], 99999.0)
             elif parem == 'HISTORY_REFERENCE':
@@ -862,7 +896,22 @@ def fill_other_history_parem_arrs(final_nc_data_prof, parems_to_fill = None):
                     final_nc_data_prof['HISTORY_REFERENCE'] = np.array(list(' ' * 64))
                 else:
                     final_nc_data_prof['HISTORY_REFERENCE'] = np.vstack([final_nc_data_prof["HISTORY_REFERENCE"], np.array(list(' ' * 64))])
-    
+            elif parem == "HISTORY_INSTITUTION":
+                if final_nc_data_prof["HISTORY_INSTITUTION"] is None:
+                    final_nc_data_prof["HISTORY_INSTITUTION"] = np.array(list('JPL '))
+                else:
+                    final_nc_data_prof["HISTORY_INSTITUTION"] = np.vstack([final_nc_data_prof["HISTORY_INSTITUTION"], np.array(list('JPL '))])
+            elif parem == "HISTORY_SOFTWARE":
+                if final_nc_data_prof["HISTORY_SOFTWARE"] is None:
+                    final_nc_data_prof['HISTORY_SOFTWARE'] =  np.array(list('DMPS'))
+                else:
+                    final_nc_data_prof['HISTORY_SOFTWARE'] = np.vstack([final_nc_data_prof["HISTORY_SOFTWARE"], np.array(list('DMPS'))])
+            elif parem == "HISTORY_SOFTWARE_RELEASE":
+                if final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] is None:
+                    final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] = np.array(list('B_V0'))
+                else:
+                    final_nc_data_prof['HISTORY_SOFTWARE_RELEASE'] = np.vstack([final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"], np.array(list('B_V0'))])
+
     return final_nc_data_prof
 
 def set_history_parems(final_nc_data_prof, type_to_set, **kwargs):
@@ -876,58 +925,72 @@ def set_history_parems(final_nc_data_prof, type_to_set, **kwargs):
     Returns:
         dict: returns final_nc_data_prof with set HISTORY_{PARAM} values
     """
-    
-    if type_to_set == "SET_IP":
-        # We always set this first
+    # Set flag to indicate we've done delayed mode processing
+    if type_to_set == "SET_DMODE":
+        if final_nc_data_prof["HISTORY_STEP"] is None:
+            final_nc_data_prof["HISTORY_STEP"] = np.array(list('ARSQ'))
+        else:
+            final_nc_data_prof["HISTORY_STEP"] = np.vstack([final_nc_data_prof["HISTORY_STEP"], np.array(list('ARSQ'))])
+        
         if final_nc_data_prof["HISTORY_ACTION"] is None:
             final_nc_data_prof["HISTORY_ACTION"] = np.array(list('  IP'))
         else:
             final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('  IP'))])
         
-        final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
+        final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_SOFTWARE', 'HISTORY_SOFTWARE_RELEASE', 'HISTORY_REFERENCE', 'HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_DATE', 'HISTORY_INSTITUTION'])
     
-    # So no need to verify if arrs are empty for remaining if statements
-    if type_to_set == "SET_QCP$" or "SET_QCF$":
-        if type_to_set == "SET_QCF$":
-            final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('QCF$'))])
-        if type_to_set == "SET_QCP$":
-            final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('QCP$'))])
-
-        if 'HISTORY_QCTEST_names' in kwargs:
-            hex_num = history_qc_test_converter(kwargs['HISTORY_QCTEST_names'], mode='encode')
-            padded_hex = np.pad(list(hex_num), (0, 16 - len(hex_num)), mode='constant', constant_values=' ')
-            final_nc_data_prof["HISTORY_QCTEST"] = np.vstack([final_nc_data_prof["HISTORY_QCTEST"], padded_hex])
-            final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
-        else:
-            final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
-
-    if type_to_set == "SET_CF":
-        final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('  CF'))])
-
-        if 'parems_set' in kwargs:
-            parems_as_str = ""
-            for a in kwargs['parems_set']:
-                parems_as_str = parems_as_str + a + ","
-            padded_parem = np.pad(list(parems_as_str[:-1]), (0, 16 - len(parems_as_str[:-1])), mode='constant', constant_values=' ')
-            final_nc_data_prof["HISTORY_PARAMETER"] = np.vstack([final_nc_data_prof["HISTORY_PARAMETER"], padded_parem])
-            final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
-        else:
-            final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
-
-    if type_to_set == "SET_POS_INTERP" or type_to_set == "SET_JULD_INTERP":
-        final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('  CV'))])
+    # 5/30/2025 Sweet Zhang: not used, just above history params need to be set to indicate delayed mode processing
+    # if type_to_set == "SET_IP":
+    #     # We always set this first
+    #     if final_nc_data_prof["HISTORY_ACTION"] is None:
+    #         final_nc_data_prof["HISTORY_ACTION"] = np.array(list('  IP'))
+    #     else:
+    #         final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('  IP'))])
         
-        if type_to_set == "SET_POS_INTERP":
-            parems_as_str = "LAT$,LON$"
-            padded_parem = np.pad(list(parems_as_str), (0, 16 - len(parems_as_str)), mode='constant', constant_values=' ')
-            final_nc_data_prof["HISTORY_PARAMETER"] = np.vstack([final_nc_data_prof["HISTORY_PARAMETER"], padded_parem])
+    #     final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
     
-        if type_to_set == "SET_JULD_INTERP":
-            parems_as_str = "JULD"
-            padded_parem = np.pad(list(parems_as_str), (0, 16 - len(parems_as_str)), mode='constant', constant_values=' ')
-            final_nc_data_prof["HISTORY_PARAMETER"] = np.vstack([final_nc_data_prof["HISTORY_PARAMETER"], padded_parem])
+    # # So no need to verify if arrs are empty for remaining if statements
+    # if type_to_set == "SET_QCP$" or "SET_QCF$":
+    #     if type_to_set == "SET_QCF$":
+    #         final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('QCF$'))])
+    #     if type_to_set == "SET_QCP$":
+    #         final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('QCP$'))])
+
+    #     if 'HISTORY_QCTEST_names' in kwargs:
+    #         hex_num = history_qc_test_converter(kwargs['HISTORY_QCTEST_names'], mode='encode')
+    #         padded_hex = np.pad(list(hex_num), (0, 16 - len(hex_num)), mode='constant', constant_values=' ')
+    #         final_nc_data_prof["HISTORY_QCTEST"] = np.vstack([final_nc_data_prof["HISTORY_QCTEST"], padded_hex])
+    #         final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
+    #     else:
+    #         final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
+
+    # if type_to_set == "SET_CF":
+    #     final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('  CF'))])
+
+    #     if 'parems_set' in kwargs:
+    #         parems_as_str = ""
+    #         for a in kwargs['parems_set']:
+    #             parems_as_str = parems_as_str + a + ","
+    #         padded_parem = np.pad(list(parems_as_str[:-1]), (0, 16 - len(parems_as_str[:-1])), mode='constant', constant_values=' ')
+    #         final_nc_data_prof["HISTORY_PARAMETER"] = np.vstack([final_nc_data_prof["HISTORY_PARAMETER"], padded_parem])
+    #         final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
+    #     else:
+    #         final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PARAMETER', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
+
+    # if type_to_set == "SET_POS_INTERP" or type_to_set == "SET_JULD_INTERP":
+    #     final_nc_data_prof["HISTORY_ACTION"] = np.vstack([final_nc_data_prof["HISTORY_ACTION"], np.array(list('  CV'))])
+        
+    #     if type_to_set == "SET_POS_INTERP":
+    #         parems_as_str = "LAT$,LON$"
+    #         padded_parem = np.pad(list(parems_as_str), (0, 16 - len(parems_as_str)), mode='constant', constant_values=' ')
+    #         final_nc_data_prof["HISTORY_PARAMETER"] = np.vstack([final_nc_data_prof["HISTORY_PARAMETER"], padded_parem])
     
-        final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
+    #     if type_to_set == "SET_JULD_INTERP":
+    #         parems_as_str = "JULD"
+    #         padded_parem = np.pad(list(parems_as_str), (0, 16 - len(parems_as_str)), mode='constant', constant_values=' ')
+    #         final_nc_data_prof["HISTORY_PARAMETER"] = np.vstack([final_nc_data_prof["HISTORY_PARAMETER"], padded_parem])
+    
+    #     final_nc_data_prof = fill_other_history_parem_arrs(final_nc_data_prof, ['HISTORY_START_PRES', 'HISTORY_STOP_PRES', 'HISTORY_QCTEST', 'HISTORY_PREVIOUS_VALUE', 'HISTORY_REFERENCE'])
     
     return final_nc_data_prof
 
@@ -978,27 +1041,14 @@ def set_sci_calib_parems(final_nc_data_prof, param_to_set, **kwargs):
     return final_nc_data_prof
 
         
-def sal_recalc_RBRargo3_3k_procedures(processed_argo_data):
-
-    # Step 1: recompute sal due to compressinility effect  
-    Co = gsw.C_from_SP(processed_argo_data["PSALs"], processed_argo_data["TEMPs"], processed_argo_data["PRESs"])
-    PSAL_ADJUSTED_Padj = gsw.SP_from_C(Co, processed_argo_data["TEMP_ADJUSTED"], processed_argo_data["PRES_ADJUSTED"])
-
-    # Step 2: apply thermal inertia correction 
-    # a) check TEMP_CNDC visually 
-    Cadj = gsw.C_from_SP(PSAL_ADJUSTED_Padj, processed_argo_data["TEMP_ADJUSTED"], processed_argo_data["PRES_ADJUSTED"])
-    # c) estimate elapsed time
-    # d) compute TEMP_celltm
-    
 def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = None):
 
     if org_netcdf_fp is not None:
         org_files = sorted(glob.glob(os.path.join(org_netcdf_fp, "*.nc")))
     processed_argo_data = read_intermediate_nc_file(nc_filepath)
-    processed_argo_data = format_argo_data(processed_argo_data)
+    processed_argo_data = format_argo_data(processed_argo_data, 1)
 
     # init fillvals for ADJUSTED_ERROR_PAREM
-    CNDC_ADJUSTED_ERROR_FILLVAL = np.nan
     PRES_ADJUSTED_ERROR_FILLVAL = np.nan
     PSAL_ADJUSTED_ERROR_FILLVAL = np.nan
     TEMP_ADJUSTED_ERROR_FILLVAL = np.nan
@@ -1006,9 +1056,6 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
     # Initialize dictionary with 'noval' for all keys
     final_nc_data = {
         'CNDC': 'noval', 
-        'CNDC_ADJUSTED': 'noval', 
-        'CNDC_ADJUSTED_ERROR': 'noval', 
-        'CNDC_ADJUSTED_QC': 'noval', 
         'CNDC_QC': 'noval', 
         'CONFIG_MISSION_NUMBER': 'noval',  
         'CYCLE_NUMBER': 'noval',
@@ -1045,7 +1092,7 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         'NB_SAMPLE_CTD_QC': 'noval',
         'PARAMETER': 'noval',
         'PI_NAME': 'noval',
-        'PLATFORM NUMBER': 'noval',
+        'PLATFORM_NUMBER': 'noval',
         'PLATFORM_TYPE': 'noval',
         'POSITION_QC': 'noval',
         'POSITIONING_SYSTEM': 'noval',
@@ -1134,8 +1181,6 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
                 final_nc_data["VERTICAL_SAMPLING_SCHEME"] = param_val
             elif 'WMO_INST_TYPE' in line:
                 final_nc_data["WMO_INST_TYPE"] = param_val
-            elif 'CNDC_ADJUSTED_ERROR' in line:
-                CNDC_ADJUSTED_ERROR_FILLVAL = float(param_val)
             elif 'PRES_ADJUSTED_ERROR' in line:
                 PRES_ADJUSTED_ERROR_FILLVAL = float(param_val)
             elif 'PSAL_ADJUSTED_ERROR' in line:
@@ -1148,8 +1193,11 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
     for profile_num in processed_argo_data["PROFILE_NUMS"]:
 
         if org_netcdf_fp is not None:
-            org_profile_file = [f for f in org_files if f.endswith(f"R{float_num}_{profile_num:03}.nc")]
-            argo_org_file = nc4.Dataset(org_profile_file[0])
+            try:
+                org_profile_file = [f for f in org_files if f.endswith(f"R{float_num}_{profile_num:03}.nc")]
+                argo_org_file = nc4.Dataset(org_profile_file[0])
+            except IndexError as e:
+                org_netcdf_fp = None
 
         # Get corresponding index of profile in argo_data dict
         i = np.where(processed_argo_data["PROFILE_NUMS"] == profile_num)
@@ -1160,8 +1208,6 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
 
         # init vars of final_nc_data
         final_nc_data_prof["CNDC"] = np.squeeze(processed_argo_data["CNDCs"][i, :nan_index])
-        final_nc_data_prof["CNDC_ADJUSTED"] = np.squeeze(processed_argo_data["CNDC_ADJUSTED"][i, :nan_index])
-        final_nc_data_prof["CNDC_ADJUSTED_QC"] = np.squeeze(processed_argo_data["CNDC_ADJUSTED_QC"][i, :nan_index])
         final_nc_data_prof["CNDC_QC"] = np.squeeze(processed_argo_data["CNDC_QC"][i, :nan_index])
 
         final_nc_data_prof["CONFIG_MISSION_NUMBER"] = profile_num
@@ -1197,7 +1243,6 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["PSAL_QC"] = np.squeeze(processed_argo_data["PSAL_QC"][i, :nan_index])
 
         # Set {PAREM}_ADJUSTED_ERROR arrs
-        final_nc_data_prof["CNDC_ADJUSTED_ERROR"] = np.full(np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index]).shape, fill_value = CNDC_ADJUSTED_ERROR_FILLVAL)
         final_nc_data_prof["PRES_ADJUSTED_ERROR"] = np.full(np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index]).shape, fill_value = PRES_ADJUSTED_ERROR_FILLVAL)
         final_nc_data_prof["PSAL_ADJUSTED_ERROR"] = np.full(np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index]).shape, fill_value = PSAL_ADJUSTED_ERROR_FILLVAL)
         final_nc_data_prof["TEMP_ADJUSTED_ERROR"] = np.full(np.squeeze(processed_argo_data["TEMP_ADJUSTED"][i, :nan_index]).shape, fill_value = TEMP_ADJUSTED_ERROR_FILLVAL)
@@ -1218,14 +1263,19 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
 
         if processed_argo_data["PRES_OFFSET"][i][0] is not None:
             set_sci_calib_parems(final_nc_data_prof, "SET_COEFFICIENT", 
-                                    pres = f"surface_pressure={float(processed_argo_data["PRES_OFFSET"][i][0]):.2f} dbar")
+                                    pres = f"surface_pressure={float(processed_argo_data["PRES_OFFSET"][i][0]):.2f} dbar",
+                                    # psal = f"dS = 0.025 (+/-0.001)"
+                                    )
         else:
             set_sci_calib_parems(final_nc_data_prof, "SET_COEFFICIENT")
         
         set_sci_calib_parems(final_nc_data_prof, "SET_COMMENT",
-                                pres = f"Pressure adjusted during delayed mode processing based on most recent valid surface pressure")
+                                pres = f"Pressure adjusted during delayed mode processing based on most recent valid surface pressure",
+                                psal = f"Due to the lack of large temperature gradients and increased noise in salinity, standard RBR thermal inertia correction not applied")
         set_sci_calib_parems(final_nc_data_prof, "SET_EQUATION",
-                                pres = f"PRES_ADJUSTED = PRES - surface_pressure")
+                                pres = f"PRES_ADJUSTED = PRES - surface_pressure",
+                                # psal = f"PSAL_ADJUSTED = PSAL + dS"
+                                )
         set_sci_calib_parems(final_nc_data_prof, "SET_DATE",
                                 pres = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
                                 temp = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
@@ -1270,34 +1320,19 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
             final_nc_data_prof["HISTORY_DATE"] = None
             final_nc_data_prof["HISTORY_INSTITUTION"] = None
 
-        ##### SET FLAGS TO INDICATED WE'VE DONE DELAYED MODE PROCESSING #####
-        # Set IP flag: we've operated on the complete input record 
-        final_nc_data_prof = set_history_parems(final_nc_data_prof, "SET_IP")
-        # Set ACTION to say we've performed tests
-        final_nc_data_prof = set_history_parems(final_nc_data_prof, "SET_QCP$", HISTORY_QCTEST_names = ["Visual QC test"])
-        
-        ##### CHECK TO SEE IF WE'VE SET ANY BAD FLAGS FOR PARAMS ############
-        parems_to_set = []
-
-        if not np.array_equal(final_nc_data_prof["PRES_ADJUSTED_QC"], final_nc_data_prof["PRES_QC"]):
-            parems_to_set.append("PRES")
-        if not np.array_equal(final_nc_data_prof["PSAL_ADJUSTED_QC"], final_nc_data_prof["PSAL_QC"]):
-            parems_to_set.append("PSAL")
-        if not np.array_equal(final_nc_data_prof["TEMP_ADJUSTED_QC"], final_nc_data_prof["TEMP_QC"]):
-            parems_to_set.append("TEMP")
-
-        if parems_to_set:
-            final_nc_data_prof = set_history_parems(final_nc_data_prof, "SET_QCF$", HISTORY_QCTEST_names=["Visual QC test"])
-            # NOTE:
-            # parems to set cannot be more than 3 parems
-            final_nc_data_prof = set_history_parems(final_nc_data_prof, "SET_CF", parems_set=parems_to_set)
-
-        ##### CHECK IF WE'VE INTERPOLATED POSITION/ TIME ####################
-        if final_nc_data_prof["POSITION_QC"] == 8:
-            # we've interp lat/lon
-            final_nc_data_prof = set_history_parems(final_nc_data_prof, "SET_POS_INTERP")
-        if final_nc_data_prof["JULD_QC"] == 8 or final_nc_data_prof["JULD_QC"] == 5:
-            final_nc_data_prof = set_history_parems(final_nc_data_prof, "SET_JULD_INTERP")
+        ##### SET HISTORY FLAGS TO INDICATED WE'VE DONE DELAYED MODE PROCESSING #####
+        final_nc_data_prof = set_history_parems(final_nc_data_prof, "SET_DMODE")
+        # Check shape, add dummy axis if only 1 arr
+        if final_nc_data_prof["HISTORY_INSTITUTION"].ndim == 1:
+            final_nc_data_prof["HISTORY_SOFTWARE"] = final_nc_data_prof["HISTORY_SOFTWARE"][np.newaxis, :] 
+            final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"] = final_nc_data_prof["HISTORY_SOFTWARE_RELEASE"][np.newaxis, :] 
+            final_nc_data_prof["HISTORY_REFERENCE"] = final_nc_data_prof["HISTORY_REFERENCE"][np.newaxis, :] 
+            final_nc_data_prof["HISTORY_ACTION"] = final_nc_data_prof["HISTORY_ACTION"][np.newaxis, :] 
+            final_nc_data_prof["HISTORY_QCTEST"] = final_nc_data_prof["HISTORY_QCTEST"][np.newaxis, :] 
+            final_nc_data_prof["HISTORY_PARAMETER"] = final_nc_data_prof["HISTORY_PARAMETER"][np.newaxis, :]
+            final_nc_data_prof["HISTORY_STEP"] = final_nc_data_prof["HISTORY_STEP"][np.newaxis, :]
+            final_nc_data_prof["HISTORY_DATE"] = final_nc_data_prof["HISTORY_DATE"][np.newaxis, :]
+            final_nc_data_prof["HISTORY_INSTITUTION"] = final_nc_data_prof["HISTORY_INSTITUTION"][np.newaxis, :]
 
         # Copy {PAREM}_ADJUSTED_QC arr vals into {PAREM}_QC
         final_nc_data_prof["PRES_QC"] = final_nc_data_prof["PRES_ADJUSTED_QC"]
@@ -1305,39 +1340,26 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["TEMP_QC"] = final_nc_data_prof["TEMP_ADJUSTED_QC"]
         # Set CNDC QC vals to PSAL QC vals
         final_nc_data_prof["CNDC_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
-        final_nc_data_prof["CNDC_ADJUSTED_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
 
-        # 3.5.2 where PARAM_ADJUSTED_QC = 4 or 9, PARAM_ADJUSTED + PARAM_ADJUSTED_ERROR = FillVal
-        pres_mask = (final_nc_data_prof["PRES_ADJUSTED_QC"] == 4) | (final_nc_data_prof["PRES_ADJUSTED_QC"] == 9)
-        final_nc_data_prof["PRES_ADJUSTED"][pres_mask] = 99999.0
-        final_nc_data_prof["PRES_ADJUSTED_ERROR"][pres_mask] = 99999.0
-        
-        psal_mask = (final_nc_data_prof["PSAL_ADJUSTED_QC"] == 4) | (final_nc_data_prof["PSAL_ADJUSTED_QC"] == 9)
-        final_nc_data_prof["PSAL_ADJUSTED"][psal_mask] = 99999.0
-        final_nc_data_prof["PSAL_ADJUSTED_ERROR"][psal_mask] = 99999.0
-        
-        temp_mask = (final_nc_data_prof["TEMP_ADJUSTED_QC"] == 4) | (final_nc_data_prof["TEMP_ADJUSTED_QC"] == 9)
-        final_nc_data_prof["TEMP_ADJUSTED"][temp_mask] = 99999.0
-        final_nc_data_prof["TEMP_ADJUSTED_ERROR"][temp_mask] = 99999.0
+    #    # apply salinity offset
+    #     final_nc_data_prof["PSAL_ADJUSTED"] = final_nc_data_prof["PSAL_ADJUSTED"] + 0.025
 
-        cndc_mask = (final_nc_data_prof["CNDC_ADJUSTED_QC"] == 4) | (final_nc_data_prof["CNDC_ADJUSTED_QC"] == 9)
-        final_nc_data_prof["CNDC_ADJUSTED"][cndc_mask] = 99999.0
-        final_nc_data_prof["CNDC_ADJUSTED_ERROR"][cndc_mask] = 99999.0
+        # Format data NOTE: this needs to be last step!!!
+        final_nc_data_prof = format_argo_data(final_nc_data_prof, 2)
+
         make_final_nc_files(final_nc_data_prof, float_num, dest_filepath)
 
 def main():
-    """
-    float_num = "1902655"
-    #float_num = "F10051"
-    dest_filepath = "c:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\Ascending\\F10051_final_A"
-    nc_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\Ascending\\F10051_FTR"
-    orgargo_netcdf_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
-    config_fp = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\ARGO_GEN\\F10051_config_file.txt"
-    """
-    float_num = "F9186"
-    dest_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_final_")
-    nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_VI")
-    config_fp = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_config_file.txt")
+    # float_num = "1902655"
+    # nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10051\F10051_VI")
+    # dest_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10051\F10051_final")
+    orgargo_netcdf_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10051\Data_ARGO_NETCDF")
+    # config_fp = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10051\1902655_config_file.txt")
+    
+    float_num = "4903903"
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9185\F9443_VI_182")
+    dest_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9185\F9443_VI_182")
+    config_fp = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9185\4903903_config_file.txt")
     orgargo_netcdf_filepath = None
     
     if not os.path.exists(dest_filepath):
@@ -1348,7 +1370,8 @@ def main():
     to make delayed mode NETCDF file.
     """
     #make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = orgargo_netcdf_filepath)
-    #make_config_file(float_num, dest_filepath)
+    # make_config_file(float_num, dest_filepath)
+    # raise Exception
 
     process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = orgargo_netcdf_filepath)
 

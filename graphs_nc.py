@@ -18,16 +18,15 @@ from scipy.interpolate import interp1d
 def TS_graph_double(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs, 
         df_LATs_2, df_LONs_2, df_JULDs_2, df_PRESs_2, df_PSALs_2, df_TEMPs_2,
         float_name_1, float_name_2):
-    
-    # convert data for F9443
-    for i in np.arange(df_SALs.shape[0]):    # number of profiles
-        df_SALs[i, :] = gsw.conversions.SA_from_SP(df_SALs[i, :], df_TEMPs[i, :], df_LONs[i], df_LATs[i])
-        df_TEMPs[i, :] = gsw.conversions.CT_from_t(df_SALs[i, :], df_TEMPs[i, :], df_PRESs[i, :])
 
-    # convert data for F9186
-    for i in np.arange(df_PSALs_2.shape[0]):    # number of profiles
-        df_PSALs_2[i, :] = gsw.conversions.SA_from_SP(df_PSALs_2[i, :], df_TEMPs_2[i, :], df_LONs_2[i], df_LATs_2[i])
-        df_TEMPs_2[i, :] = gsw.conversions.CT_from_t(df_PSALs_2[i, :], df_TEMPs_2[i, :], df_PRESs_2[i, :])
+    # Get rid of data conversions for QC
+    # for i in np.arange(df_SALs.shape[0]):    # number of profiles
+    #     df_SALs[i, :] = gsw.conversions.SA_from_SP(df_SALs[i, :], df_TEMPs[i, :], df_LONs[i], df_LATs[i])
+    #     df_TEMPs[i, :] = gsw.conversions.CT_from_t(df_SALs[i, :], df_TEMPs[i, :], df_PRESs[i, :])
+
+    # for i in np.arange(df_PSALs_2.shape[0]):    # number of profiles
+    #     df_PSALs_2[i, :] = gsw.conversions.SA_from_SP(df_PSALs_2[i, :], df_TEMPs_2[i, :], df_LONs_2[i], df_LATs_2[i])
+    #     df_TEMPs_2[i, :] = gsw.conversions.CT_from_t(df_PSALs_2[i, :], df_TEMPs_2[i, :], df_PRESs_2[i, :])
 
     # Define salinity and temperature bounds for the contour plot based on ref dataset
     smin = np.nanmin(df_SALs) - 1
@@ -86,7 +85,7 @@ def TS_graph_double(df_SALs, df_TEMPs, df_JULD, df_LONs, df_LATs, df_PRESs,
     plt.xlim([smin + 0.75, smax - 0.75])
     plt.ylim([tmin + 0.75, tmax - 0.75])
     plt.xlabel('Salinity (PSU)')
-    plt.ylabel('Temperature (degC)')
+    plt.ylabel('In-Situ Temperature (degC)')
     plt.title(f"Argo Float {float_name_1} (RED) v {float_name_2} TS Graph")
 
     # Adjust spacing, show plot
@@ -173,7 +172,7 @@ def pres_v_var_all(df_PRESs, df_VARs, df_JULD, df_prof_nums, compare_var, float_
 
     return selected_profiles
 
-def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, argodata=None, ax=None, figure= None):
+def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, argodata=None, ax=None, figure= None, run_inversion = True):
 
     print_multiplot = False
     if ax is None:
@@ -209,10 +208,11 @@ def flag_point_data_graphs(var, PRES, data_type, qc_arr, profile_num, date, argo
             edge_colors.append('green')
     
     # Inversion test
-    if argodata is not None:
-        inversion = density_inversion_test(argodata, profile_num)
-        for i in inversion:
-            edge_colors[i] = 'fuchsia'
+    if run_inversion is True:
+        if argodata is not None:
+            inversion = density_inversion_test(argodata, profile_num)
+            for i in inversion:
+                edge_colors[i] = 'fuchsia'
 
     # Plot good points (green)
     if data_type == "PRES":
@@ -550,13 +550,13 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
     sal_copy = copy.deepcopy(sal)
     temp_copy = copy.deepcopy(temp)
     
-    # Convert data
-    if (not np.isnan(lats)) and (not np.isnan(lons)):
-        sal_copy = gsw.conversions.SA_from_SP(sal, temp, lons, lats)
-        temp_copy = gsw.conversions.CT_from_t(sal, temp, pres)
-    else:
-        sal_copy = sal
-        temp_copy = temp
+    # Get rid of data conversion for QC
+    # if (not np.isnan(lats)) and (not np.isnan(lons)):
+    #     sal_copy = gsw.conversions.SA_from_SP(sal, temp, lons, lats)
+    #     temp_copy = gsw.conversions.CT_from_t(sal, temp, pres)
+    # else:
+    #     sal_copy = sal
+    #     temp_copy = temp
 
     # Define salinity and temperature bounds for the contour plot
     smin = np.nanmin(sal_copy) - 1
@@ -669,7 +669,7 @@ def flag_TS_data_graphs(sal, temp, date, lons, lats, pres, profile_num, temp_adj
     )
 
     ax.set_xlabel('Salinity (PSU)')
-    ax.set_ylabel('Temperature (degC)')
+    ax.set_ylabel('In-Situ Temperature (degC)')
  
     if print_multiplot == False:
         ax.set_title(f"TS Graph for Profile: {profile_num} on {from_julian_day(float(date)).date()}")
@@ -723,10 +723,10 @@ def TS_graph_single_dataset_all_profile(df_SALs, df_TEMPs, df_JULD, df_LONs, df_
     df_SALs_copy = copy.deepcopy(df_SALs)
     df_TEMPs_copy = copy.deepcopy(df_TEMPs)
     
-    # Convert data for ref dataset
-    for i in np.arange(df_SALs.shape[0]):    # number of profiles
-        df_SALs_copy[i, :] = gsw.conversions.SA_from_SP(df_SALs[i, :], df_TEMPs[i, :], df_LONs[i], df_LATs[i])
-        df_TEMPs_copy[i, :] = gsw.conversions.CT_from_t(df_SALs[i, :], df_TEMPs[i, :], df_PRESs[i, :])
+    # Get rid of data conversions for QC
+    # for i in np.arange(df_SALs.shape[0]):    # number of profiles
+    #     df_SALs_copy[i, :] = gsw.conversions.SA_from_SP(df_SALs[i, :], df_TEMPs[i, :], df_LONs[i], df_LATs[i])
+    #     df_TEMPs_copy[i, :] = gsw.conversions.CT_from_t(df_SALs[i, :], df_TEMPs[i, :], df_PRESs[i, :])
     
     # Define salinity and temperature bounds for the contour plot
     smin = np.nanmin(df_SALs_copy) - 1
@@ -780,7 +780,7 @@ def TS_graph_single_dataset_all_profile(df_SALs, df_TEMPs, df_JULD, df_LONs, df_
     plt.xlim([smin + 0.75, smax - 0.75])
     plt.ylim([tmin + 0.75, tmax - 0.75])
     plt.xlabel('Salinity (PSU)')
-    plt.ylabel('Temperature (degC)')
+    plt.ylabel('In-Situ Temperature (degC)')
     plt.title(f"Argo Float {float_name} TS Graph")
     plt.tight_layout()
 

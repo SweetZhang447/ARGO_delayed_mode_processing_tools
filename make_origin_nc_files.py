@@ -10,9 +10,12 @@ from concurrent.futures import ProcessPoolExecutor
 import requests
 from pathlib import Path
 import copy
+from scipy import stats
+import gsw
+
 
 def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, counts,
-                        PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED, CNDC_ADJUSTED,
+                        PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED,
                         latitude, longitude, juld_timestamp, juld_location, dest_filepath, float_num,
                         **kwargs):
     """
@@ -24,9 +27,8 @@ def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, co
     nc = nc4.Dataset(output_filename, 'w')
 
     # Set global attributes
-    # TODO: make more detailed later
     nc.author = 'Sweet Zhang'
-    nc.summary = 'NC file of CSV: LGR_CP_PTSCI readings ONLY'
+    nc.summary = 'NC file: LGR_CP_PTSCI readings ONLY'
 
     # convert all lists to numpy array types
     pressures = np.asarray(pressures)
@@ -40,8 +42,7 @@ def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, co
     PSAL_ADJUSTED_QC = kwargs.get("PSAL_ADJUSTED_QC", np.full(sals.shape, fill_value=0))
     TEMP_ADJUSTED_QC = kwargs.get("TEMP_ADJUSTED_QC", np.full(temps.shape, fill_value=0))
     PRES_ADJUSTED_QC = kwargs.get("PRES_ADJUSTED_QC", np.full(pressures.shape, fill_value=0))
-    CNDC_ADJUSTED_QC = kwargs.get("CNDC_ADJUSTED_QC", np.full(pressures.shape, fill_value=0)) 
-
+ 
     PSAL_QC = kwargs.get("PSAL_QC", np.full(pressures.shape, fill_value=0)) 
     TEMP_QC = kwargs.get("TEMP_QC", np.full(pressures.shape, fill_value=0)) 
     PRES_QC = kwargs.get("PRES_QC", np.full(pressures.shape, fill_value=0)) 
@@ -138,12 +139,6 @@ def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, co
     PRES_ADJUSTED_QC_VAR = nc.createVariable('PRES_ADJUSTED_QC', 'f4', 'records')
     PRES_ADJUSTED_QC_VAR[:] = PRES_ADJUSTED_QC
 
-    CNDC_ADJUSTED_VAR = nc.createVariable('CNDC_ADJUSTED', 'f4', 'records')
-    CNDC_ADJUSTED_VAR[:] = CNDC_ADJUSTED
-
-    CNDC_ADJUSTED_QC_VAR = nc.createVariable('CNDC_ADJUSTED_QC', 'f4', 'records')
-    CNDC_ADJUSTED_QC_VAR[:] = CNDC_ADJUSTED_QC
-
     PSAL_QC_VAR = nc.createVariable('PSAL_QC', 'f4', 'records')
     PSAL_QC_VAR[:] = PSAL_QC
 
@@ -155,9 +150,6 @@ def make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, co
 
     CNDC_QC_VAR = nc.createVariable('CNDC_QC', 'f4', 'records')
     CNDC_QC_VAR[:] = CNDC_QC
-
-    QC_FLAG_CHECK_VAR = nc.createVariable('QC_FLAG_CHECK', 'f4', 'single_record')
-    QC_FLAG_CHECK_VAR[:] = 0
 
     nc.close()
 
@@ -226,9 +218,10 @@ def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
                     #             # -99 to indicate no vals were avg for this measurement
                     #             row.append(-99)
                     #             PTSCIinfo.append(row)
-                    # if row[2] == "CP started":
-                    #     JULD_timestamp = row[1]
+                    if row[2] == "CP started":
+                        JULD_timestamp = row[1]
                     if broken_float == 1:
+                        # Different broken float code... 
                         if BROKEN_CP_PTSCI_ASCENT_FLAG == True:
                             if row[0] == 'LGR_PTSCI':
                                 # -99 to indicate no vals were avg for this measurement
@@ -243,6 +236,7 @@ def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
                             PTSCIinfo.append(row)  
                     else:
                         raise Exception("Please enter a valid number for if this is a broken float")
+                    
                     # Get lon/ lat vals
                     if(row[0] == 'GPS'):
                         GPS.append(row)
@@ -280,11 +274,16 @@ def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
             if JULD_timestamp is not None:
                 juld_timestamp = to_julian_day(datetime.strptime(JULD_timestamp, "%Y%m%dT%H%M%S"))
             else:
-                juld_timestamp = np.nan
-                print(f"JULD not present for {profile_num}")
+                # Use last PTSCI (deepest) measurement as timestamp if it exists
+                if len(PTSCI_timestamps) > 0:
+                    juld_timestamp = to_julian_day(datetime.strptime(str(PTSCI_timestamps[0]), "%Y%m%d%H%M%S"))
+                    print(f"JULD not present for {profile_num}, using last PTSCI timestamp instead")
+                else:
+                    juld_timestamp = np.nan
+                    print(f"JULD not present for {profile_num}")
 
             # Init vars for sys file
-            offset, PSAL_ADJUSTED, TEMP_ADJUSTED, PRES_ADJUSTED, CNDC_ADJUSTED = None, None, None, None, None
+            offset, PSAL_ADJUSTED, TEMP_ADJUSTED, PRES_ADJUSTED  = None, None, None, None
     
             with open(file_paths["system_log"], mode='r') as sys_file:
                 for line in sys_file:
@@ -301,11 +300,29 @@ def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
             counts.reverse()
             PTSCI_timestamps.reverse()
 
+            # # bin avg data according to pressure - bin size is 2DBAR
+            # this is code to bin avg broken float data for F10051
+            # bin_edges = np.arange(np.nanmin(pressures), np.nanmax(pressures) + 2, 2)
+            # pres_binned = stats.binned_statistic(pressures, pressures, 'mean', bins=bin_edges).statistic
+            # temp_binned = stats.binned_statistic(pressures, temps, 'mean', bins=bin_edges).statistic
+            # cndc_binned = stats.binned_statistic(pressures, cndc, 'mean', bins=bin_edges).statistic
+            # temp_cndc_binned = stats.binned_statistic(pressures, temp_cndc, 'mean', bins=bin_edges).statistic
+            # counts_binned = stats.binned_statistic(pressures, pressures, statistic='count', bins=bin_edges).statistic
+            # # practical salinity 
+            # psal_binned = gsw.SP_from_C(cndc_binned, temp_binned, pres_binned)
+
+            # # make sure to reverse data after binnning ###
+            # pressures = pres_binned
+            # temps = temp_binned
+            # sals = psal_binned
+            # cndc = cndc_binned
+            # temp_cndc = temp_cndc_binned
+            # counts = counts_binned
+
             PTSCI_timestamps = np.asarray(PTSCI_timestamps)
             TEMP_ADJUSTED =  np.asarray(copy.deepcopy(temps))
             PSAL_ADJUSTED =  np.asarray(copy.deepcopy(sals))
             cndc = np.asarray(cndc)/10
-            CNDC_ADJUSTED = np.asarray(copy.deepcopy(cndc))
 
             # init VAR_ADJUSTED arrs
             if offset is None:
@@ -313,13 +330,13 @@ def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
                 print("[VAR]_ADJUSTED arrays will be initalized as copies of orginal data arrs, no pressure offset applied")
                 PRES_ADJUSTED = np.asarray(copy.deepcopy(pressures))
                 make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, counts,
-                                    PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED, CNDC_ADJUSTED,
+                                    PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED,
                                     latitude, longitude, juld_timestamp, juld_location, dest_filepath, float_num,
                                     pres_offset=offset, PTSCI_TIMESTAMPS=PTSCI_timestamps)
             else:
                 PRES_ADJUSTED =  np.asarray(copy.deepcopy(pressures)) - float(offset)
                 make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, counts,
-                                    PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED, CNDC_ADJUSTED,
+                                    PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED,
                                     latitude, longitude, juld_timestamp, juld_location, dest_filepath, float_num,
                                     pres_offset=offset, PTSCI_TIMESTAMPS=PTSCI_timestamps)
 
@@ -391,12 +408,7 @@ def read_argo_nc_files(nc_filepath, dest_filepath, float_num):
         else:
             PRES_QC = np.full(pressures.shape, fill_value=0)
 
-        CNDC_ADJUSTED =  np.squeeze(nc.variables['CNDC_ADJUSTED'][:].filled(np.NaN))
-        cndc_adjusted_qc_temp = np.squeeze(nc.variables['CNDC_ADJUSTED_QC'][:].filled(np.NaN))
-        if cndc_adjusted_qc_temp.size != 1 and cndc_adjusted_qc_temp.size != 0:
-            CNDC_ADJUSTED_QC = np.asarray([int(x) for x in cndc_adjusted_qc_temp])
-        else:
-            CNDC_ADJUSTED_QC = np.full(pressures.shape, fill_value=0)
+        
         cndc_qc_temp = np.squeeze(nc.variables['CNDC_QC'][:].filled(np.NaN))
         if cndc_qc_temp.size != 1 and cndc_qc_temp.size != 0:
             CNDC_QC = np.asarray([int(x) for x in cndc_qc_temp])
@@ -419,7 +431,7 @@ def read_argo_nc_files(nc_filepath, dest_filepath, float_num):
             NB_SAMPLE_CTD_QC = np.full(pressures.shape, fill_value=0)
         
         make_nc_file_origin(profile_num, pressures, temps, sals, cndc, temp_cndc, counts,
-                            PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED, CNDC_ADJUSTED,
+                            PRES_ADJUSTED, TEMP_ADJUSTED, PSAL_ADJUSTED,
                             latitude, longitude, juld_timestamp, juld_location, dest_filepath, float_num,
                             PSAL_QC = PSAL_QC,
                             TEMP_QC = TEMP_QC,
@@ -428,7 +440,6 @@ def read_argo_nc_files(nc_filepath, dest_filepath, float_num):
                             PSAL_ADJUSTED_QC=PSAL_ADJUSTED_QC, 
                             TEMP_ADJUSTED_QC=TEMP_ADJUSTED_QC,
                             PRES_ADJUSTED_QC=PRES_ADJUSTED_QC,
-                            CNDC_ADJUSTED_QC=CNDC_ADJUSTED_QC,
                             POSITION_QC=POSITION_QC,
                             JULD_QC=JULD_QC,
                             TEMP_CNDC_QC=TEMP_CNDC_QC,
@@ -489,21 +500,16 @@ def download_file(dload_url, download_dir, float_num):
 def main():
 
     download_ARGO_NETCDF_files = 0
-    dload_url = "https://data-argo.ifremer.fr/dac/aoml/1902655/profiles/"
-    read_ARGO_NETCDF_files = 0
-    read_RAW_CSV_files = 1
+    dload_url = "https://data-argo.ifremer.fr/dac/aoml/6990591/profiles/"
+    read_ARGO_NETCDF_files = 1
+    read_RAW_CSV_files = 0
 
-    float_num= "F10051"
-    # F10051_bad_data_30_69        F10051_all_data_good
-    input_dir = "C:\\Users\\szswe\\Desktop\\NOAA_pipeline\\F10051_data\\F10051_bad_data_30_69"
-    # dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F10051_0"
-    # input_dir = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F10051_ARGO_NETCDF"
-    dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\argo_to_nc\\Ascending\\F10051_0"
-    #input_dir = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\RAW_DATA\\F9186_raw_csv"
-    #dest_filepath = "C:\\Users\\szswe\\Desktop\\compare_floats_project\\data\\csv_to_nc\\F9186_0"
+    float_num = "7902322"
+    input_dir = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_new")
+    dest_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_new_0")
 
     if download_ARGO_NETCDF_files == 1:
-        argo_internal_float_num = "1902655"
+        argo_internal_float_num = "6990591"
         download_files(dload_url, input_dir, argo_internal_float_num)
 
     if read_ARGO_NETCDF_files == 1:

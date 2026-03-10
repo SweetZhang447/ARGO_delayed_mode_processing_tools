@@ -14,6 +14,7 @@ from tools import from_julian_day, to_julian_day, read_intermediate_nc_file, mak
 import gsw 
 from matplotlib.lines import Line2D
 from pathlib import Path
+from scipy import stats
 
 def interp_missing_lat_lons(lats, lons, dates):
     """
@@ -150,7 +151,6 @@ def count_check(argo_data):
     """
     count_mask = np.logical_or(argo_data["NB_SAMPLE_CTD"] > 100,  np.logical_and(argo_data["NB_SAMPLE_CTD"] < 1, argo_data["NB_SAMPLE_CTD"] != -99))
     argo_data["PSAL_ADJUSTED_QC"][count_mask] = 3
-    argo_data["CNDC_ADJUSTED_QC"][count_mask] = 3
     argo_data["TEMP_ADJUSTED_QC"][count_mask] = 3
 
     return argo_data
@@ -158,7 +158,7 @@ def count_check(argo_data):
 # NOTE: Use this for RBR inductive sensors to flag data too close to surface
 def pres_depth_check(argo_data):
     """
-    Checks if pressure is less than 1, if so fill PSAL and CNDC ADJUSTED_QC with 4 to indicate bad value.
+    Checks if pressure is less than 1, if so fill PSAL and TEMP ADJUSTED_QC with 4 to indicate bad value.
 
     Args:
         argo_data (dict): dictionary of ARGO delayed mode profile values
@@ -168,7 +168,6 @@ def pres_depth_check(argo_data):
     """
     pres_mask = np.where(argo_data["PRESs"] < 1)
     argo_data["PSAL_ADJUSTED_QC"][pres_mask] = 4
-    argo_data["CNDC_ADJUSTED_QC"][pres_mask] = 4
     argo_data["TEMP_ADJUSTED_QC"][np.where(argo_data["PRESs"] < 0.1)] = 4
 
     return argo_data
@@ -186,7 +185,6 @@ def temp_check(argo_data):
 
     """
     argo_data["TEMP_ADJUSTED_QC"][np.where(argo_data["TEMPs"] < -2)] = 4
-    argo_data["TEMP_ADJUSTED_QC"][np.where(argo_data["PRESs"] < 0.1)] = 4
 
     return argo_data
 
@@ -251,6 +249,13 @@ def redundent(argo_data, prof_num):
 
     return argo_data
 
+def save_datasnapshot_graphs(nc_filepath, save_dir):
+    # Get dir of generated NETCDF files
+    argo_data = read_intermediate_nc_file(nc_filepath)
+
+    for profile_num in argo_data["PROFILE_NUMS"]:
+        data_snapshot_graph(argo_data, profile_num, save_dir)
+    
 def verify_autoset_qc_flags_and_density_inversions(argo_data):
     """
     Pops up series of graphs if there are preset {PARAM}_QC values so delayed mode operator can verify their correctness.
@@ -263,29 +268,17 @@ def verify_autoset_qc_flags_and_density_inversions(argo_data):
     """
 
     for i in np.arange(len(argo_data["PROFILE_NUMS"])):
-        sal_checked = False
-        temp_checked = False
-        pres_checked = False
-        
+
         # Run density inversion test
         failed_idxs = density_inversion_test(argo_data, argo_data["PROFILE_NUMS"][i])
 
-        # Check that QC_FLAG_CHECK has not been set yet
-        if argo_data["QC_FLAG_CHECK"][i] == 0:
-
-            # Condition to trigger data snapshot graph
-            if ((not (np.all(argo_data["TEMP_QC"][i] == 0) or np.all(argo_data["TEMP_QC"][i] == 1))) and 
-                (np.any(argo_data["TEMP_QC"][i] == 3) or np.any(argo_data["TEMP_QC"][i] == 4))) or \
-                ((not (np.all(argo_data["PSAL_QC"][i] == 0) or np.all(argo_data["PSAL_QC"][i] == 1))) and 
-                (np.any(argo_data["PSAL_QC"][i] == 3) or np.any(argo_data["PSAL_QC"][i] == 4))) or \
-                failed_idxs:
-                argo_data = data_snapshot_graph(argo_data, argo_data["PROFILE_NUMS"][i])
-                sal_checked = True
-                temp_checked = True
-                pres_checked = True
-
-            if sal_checked == True and temp_checked == True and pres_checked == True:
-                argo_data["QC_FLAG_CHECK"][i] == 1
+        # Condition to trigger data snapshot graph
+        if ((not (np.all(argo_data["TEMP_QC"][i] == 0) or np.all(argo_data["TEMP_QC"][i] == 1))) and 
+            (np.any(argo_data["TEMP_QC"][i] == 3) or np.any(argo_data["TEMP_QC"][i] == 4))) or \
+            ((not (np.all(argo_data["PSAL_QC"][i] == 0) or np.all(argo_data["PSAL_QC"][i] == 1))) and 
+            (np.any(argo_data["PSAL_QC"][i] == 3) or np.any(argo_data["PSAL_QC"][i] == 4))) or \
+            failed_idxs:
+            argo_data = data_snapshot_graph(argo_data, argo_data["PROFILE_NUMS"][i])
 
     return argo_data
 
@@ -435,7 +428,7 @@ def flag_TS_data(argo_data, profile_num):
        
     return argo_data
 
-def data_snapshot_graph(argo_data, profile_num):
+def data_snapshot_graph(argo_data, profile_num, save_dir = None):
     """
     Pops out graphs to give user quick look at a profile.
 
@@ -446,7 +439,6 @@ def data_snapshot_graph(argo_data, profile_num):
     Returns:
         dict: dictionary of ARGO delayed mode profile values
     """
-    from RBRargo3_celltm import RBRargo3_celltm
 
     i = np.where(argo_data["PROFILE_NUMS"] == profile_num)[0][0]
     sal_arr = argo_data["PSAL_ADJUSTED"][i]
@@ -458,14 +450,49 @@ def data_snapshot_graph(argo_data, profile_num):
     lat = argo_data["LATs"][i]
     juld = argo_data["JULDs"][i]
 
+    juld_qc = None
+    # LAT LON interpolated
+    if not np.isnan(argo_data["JULD_QC"][i]):
+        juld_qc = int(argo_data["JULD_QC"][i])
+    else:
+        juld_qc = "Real Value"
+    
+    location_qc= None
+    if not np.isnan(argo_data["POSITION_QC"][i]):
+        location_qc = argo_data["POSITION_QC"][i]
+    else:
+        location_qc = "Real Value"
+
+    # For graphs that are being saved to save_dir, get rid of points with weird counts
+    if save_dir is not None:
+        nb_sample_ctd = argo_data["NB_SAMPLE_CTD"][i]
+        valid_count_mask = np.logical_and(nb_sample_ctd <= 150, nb_sample_ctd >= 1)
+        sal_arr = np.where(valid_count_mask, sal_arr, np.nan)
+        temp_arr = np.where(valid_count_mask, temp_arr, np.nan)
+        pres_arr = np.where(valid_count_mask, pres_arr, np.nan)
+        # If PSAL_QC/ TEMP_QC arrays are invalid and it's the first/ last point, get rid of it
+        for i in range(5):
+            if temp_qc[i] in [3.0, 4.0]:
+                pres_arr[i] = np.nan
+                temp_arr[i] = np.nan
+        for i in range(5):
+            if psal_qc[i] in [3.0, 4.0]:
+                pres_arr[i] = np.nan
+                sal_arr[i] = np.nan
+        
+        # check if there is still valid data
+        if len(np.where(~np.isnan(pres_arr))[0]) == 0 or len(np.where(~np.isnan(sal_arr))[0]) == 0 or len(np.where(~np.isnan(temp_arr))[0]) == 0:
+            print(f"Skipping profile {profile_num} for data snapshot graph, no valid data")
+            return
+
     # Create a 2x2 grid of subplots
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
 
     # Populate the top-left subplot
-    selected_points_temp = flag_point_data_graphs(temp_arr, pres_arr, "TEMP", temp_qc, argo_data["PROFILE_NUMS"][i], juld, ax=axs[0, 0], figure=fig)
+    selected_points_temp = flag_point_data_graphs(temp_arr, pres_arr, "TEMP", temp_qc, argo_data["PROFILE_NUMS"][i], juld, ax=axs[0, 0], figure=fig, run_inversion=False)
 
     # Populate the top-right subplot
-    selected_points_psal = flag_point_data_graphs(sal_arr, pres_arr, "PSAL", psal_qc, argo_data["PROFILE_NUMS"][i], juld, argodata=argo_data, ax=axs[0, 1], figure=fig)
+    selected_points_psal = flag_point_data_graphs(sal_arr, pres_arr, "PSAL", psal_qc, argo_data["PROFILE_NUMS"][i], juld, argodata=argo_data, ax=axs[0, 1], figure=fig, run_inversion=False)
 
     # Populate the bottom-left subplot
     flag_TS_data_graphs(sal_arr, temp_arr, juld, lon, lat, pres_arr, profile_num, temp_qc, psal_qc, ax=axs[1, 0])
@@ -473,8 +500,8 @@ def data_snapshot_graph(argo_data, profile_num):
     # Fill bottom-right subplot with text
     timestamp = from_julian_day(float(juld))
     axs[1, 1].text(0.5, 0.7, f'Data Snapshot of Profile: {profile_num}', fontsize=12, ha='center', va='center')
-    axs[1, 1].text(0.5, 0.6, f'Datetime of Profile: {timestamp.date()} {timestamp.strftime('%H:%M:%S')}', fontsize=12, ha='center', va='center')
-    axs[1, 1].text(0.5, 0.5, f'Lat: {lat:.2f} Lon: {lon:.2f}', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.6, f'Datetime of Profile: {timestamp.date()} {timestamp.strftime("%H:%M:%S")} QC: {juld_qc}', fontsize=12, ha='center', va='center')
+    axs[1, 1].text(0.5, 0.5, f'Lat: {lat:.2f} Lon: {lon:.2f} QC: {location_qc}', fontsize=12, ha='center', va='center')
     axs[1, 1].text(0.5, 0.4, f'Flag QC-point feature enabled for TEMP + PSAL graphs', fontsize=12, ha='center', va='center')
     axs[1, 1].axis('off')
     axs[1,0].grid(True)
@@ -501,15 +528,20 @@ def data_snapshot_graph(argo_data, profile_num):
     
     # Adjust layout to prevent overlap
     plt.tight_layout()
-    plt.show()
-    
-    for j in np.arange(0, len(selected_points_temp)):
-        index = selected_points_temp[j]
-        argo_data[f"TEMP_ADJUSTED_QC"][i][j] = index
-    for j in np.arange(0, len(selected_points_psal)):
-        index = selected_points_psal[j]
-        argo_data[f"PSAL_ADJUSTED_QC"][i][j] = index
-    print("Finished setting TEMP_ADJUSTED_QC and PSAL_ADJUSTED_QC")
+
+    # Save or show the figure/ do QC
+    if save_dir is not None:
+        plt.savefig(os.path.join(save_dir, f"profile_{profile_num}_data_snapshot.png"), dpi=300)
+        plt.close()
+    else:
+        plt.show()
+        for j in np.arange(0, len(selected_points_temp)):
+            index = selected_points_temp[j]
+            argo_data[f"TEMP_ADJUSTED_QC"][i][j] = index
+        for j in np.arange(0, len(selected_points_psal)):
+            index = selected_points_psal[j]
+            argo_data[f"PSAL_ADJUSTED_QC"][i][j] = index
+        print("Finished setting TEMP_ADJUSTED_QC and PSAL_ADJUSTED_QC")
         
     return argo_data
 
@@ -539,7 +571,7 @@ def graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_s
         var = argo_data[f"{data_type}_ADJUSTED"]
         qc_arr_var = argo_data[f"{data_type}_ADJUSTED_QC"]
     else:
-        var = argo_data[f"{data_type}"]
+        var = argo_data[f"{data_type}s"]
         qc_arr_var = argo_data[f"{data_type}_QC"]
     
     # apply qc_arr to data
@@ -626,8 +658,8 @@ def graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, filter_in
         qc_arr_psal = argo_data["PSAL_ADJUSTED_QC"]
         qc_arr_temp = argo_data["TEMP_ADJUSTED_QC"]
     else:
-        psal = argo_data["PSAL"]
-        temp = argo_data["TEMP"]
+        psal = argo_data["PSALs"]
+        temp = argo_data["TEMPs"]
         qc_arr_psal = argo_data["PSAL_QC"]
         qc_arr_temp = argo_data["TEMP_QC"]  
 
@@ -671,7 +703,7 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
 
     # Get dir of generated NETCDF files
     argo_data = read_intermediate_nc_file(nc_filepath)
-    
+
     # CHECK 1: fill-in times and set QC flag to 8
     argo_data = juld_check(argo_data)
     
@@ -772,7 +804,6 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
             indexes = None
             print("Generating graph of all dates")
         
-
     selected_profiles_1 = graph_pres_v_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, indexes)
     selected_profiles_2 = graph_TS_all(argo_data, use_adjusted, float_num, qc_arr_selection, indexes)
     graph_deep_section_var_all(argo_data, data_type, use_adjusted, float_num, qc_arr_selection, indexes)
@@ -796,29 +827,31 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
 
 
 def main():
-    float_num = "F9186"
-    # nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_0")
-    nc_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_VI")
-    dest_filepath = Path(r"C:\Users\szswe\Desktop\compare_floats_project\data\F9186\F9186_VI")
+    # float_num = "7902322"
+    # nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_new_0")
+    # dest_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\ftrnew")
 
-    if not os.path.exists(dest_filepath):
-        os.mkdir(dest_filepath)
+    # if not os.path.exists(dest_filepath):
+    #     os.mkdir(dest_filepath)
 
-    #first_time_run(nc_filepath, dest_filepath, float_num)
-
-    # 101
-    profile_num = 260
-    #manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10052\F10052_FTR")
+    save_dir = Path(r"C:\Users\szswe\Desktop\kml_script\FLOAT_KML_FILES\F10052\images")
+    save_datasnapshot_graphs(nc_filepath, save_dir)
     
+    # first_time_run(nc_filepath, dest_filepath, float_num)
+    raise Exception
+    profile_num = 198
+    # manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
+    # raise Exception
     qc_arr_selection = [0, 1, 2] # only want good/ prob good data 
     data_type = "TEMP"                 # either PSAL or TEMP
     use_adjusted = True    
-    prof_num_filter = None        
+    prof_num_filter = None
     # FORMAT: YYYY_MM_DD_HH_MM_SS
     # If start date is specified with no end date: filters start date - end of profile data
     # If both: start date - end date
-    date_filter_start = "2021_04_28_00_00_00"
-    date_filter_end = "2021_06_17_00_00_00"
+    # date_filter_start = "2024_01_01_00_00_00"
+    # date_filter_end = "2024_06_01_00_00_00"
     date_filter_start = None 
     date_filter_end = None
     generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end, prof_num_filter)

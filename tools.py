@@ -6,6 +6,7 @@ import os
 import itertools
 
 def from_julian_day(julian_day):
+    julian_day = np.float64(julian_day)
 
     if not np.isnan(julian_day):
 
@@ -151,12 +152,6 @@ def make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num =
         PRES_ADJUSTED_QC_VAR = nc.createVariable('PRES_ADJUSTED_QC', 'f4', 'records')
         PRES_ADJUSTED_QC_VAR[:] = argo_data["PRES_ADJUSTED_QC"][i, :nan_index]
 
-        CNDC_ADJUSTED_VAR = nc.createVariable('CNDC_ADJUSTED', 'f4', 'records')
-        CNDC_ADJUSTED_VAR[:] = argo_data["CNDC_ADJUSTED"][i, :nan_index]
-        
-        CNDC_ADJUSTED_QC_VAR = nc.createVariable('CNDC_ADJUSTED_QC', 'f4', 'records')
-        CNDC_ADJUSTED_QC_VAR[:] = argo_data["CNDC_ADJUSTED_QC"][i, :nan_index]
-
         PSAL_QC_VAR = nc.createVariable('PSAL_QC', 'f4', 'records')
         PSAL_QC_VAR[:] = argo_data["PSAL_QC"][i, :nan_index]
 
@@ -169,9 +164,6 @@ def make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num =
         CNDC_QC_VAR = nc.createVariable('CNDC_QC', 'f4', 'records')
         CNDC_QC_VAR[:] = argo_data["CNDC_QC"][i, :nan_index]
 
-        QC_FLAG_CHECK_VAR = nc.createVariable('QC_FLAG_CHECK', 'f4', 'single_record')
-        QC_FLAG_CHECK_VAR[:] = argo_data["QC_FLAG_CHECK"][i]
-
         ptsci_timestamps_var = nc.createVariable('PTSCI_TIMESTAMPS', 'i8', 'records')
         ptsci_timestamps_var.long_name = "Format: YYYYMMDDHHMMSS"
         argo_data["PTSCI_TIMESTAMPS"][i, :nan_index][np.isnan(argo_data["PTSCI_TIMESTAMPS"][i, :nan_index])] = 0
@@ -183,10 +175,10 @@ def read_intermediate_nc_file(filepath):
 
     # Define the keys for argo data
     argo_keys = [
-        "CNDC", "CNDC_ADJUSTED", "CNDC_ADJUSTED_QC", "CNDC_QC",
+        "CNDC", "CNDC_QC",
         "JULD", "JULD_LOCATION", "JULD_QC", "LAT", "LON", "NB_SAMPLE_CTD", "NB_SAMPLE_CTD_QC", "POSITION_QC",
         "PRES", "PRES_ADJUSTED", "PRES_ADJUSTED_QC", "PRES_OFFSET", "PRES_QC", 
-        "PROFILE_NUMS", "QC_FLAG_CHECK",
+        "PROFILE_NUMS",
         "PSAL", "PSAL_ADJUSTED", "PSAL_ADJUSTED_QC", "PSAL_QC",
         "TEMP", "TEMP_ADJUSTED", "TEMP_ADJUSTED_QC", "TEMP_CNDC", "TEMP_CNDC_QC", "TEMP_QC",
         "PTSCI_TIMESTAMPS"
@@ -222,7 +214,7 @@ def read_intermediate_nc_file(filepath):
 
     # Post-process: Combine arrays and handle missing values
     for key in argo_keys:
-        if key in ["CNDC", "CNDC_ADJUSTED", "CNDC_ADJUSTED_QC", "CNDC_QC",
+        if key in ["CNDC", "CNDC_QC",
                    "NB_SAMPLE_CTD", "NB_SAMPLE_CTD_QC",
                    "PRES", "PRES_ADJUSTED", "PRES_ADJUSTED_QC", "PRES_QC",
                    "PSAL", "PSAL_ADJUSTED", "PSAL_ADJUSTED_QC", "PSAL_QC",
