@@ -32,6 +32,7 @@ import os
 from pathlib import Path
 import gsw
 from matplotlib.collections import LineCollection
+from matplotlib import dates as mdates
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
@@ -778,8 +779,8 @@ def read_lorenze_ctd_data(bin_sizes = None):
         Keys: PSALs, TEMPs, PRESs, JULDs, LATS, LONS (2D, 2×n_levels).
     """
 
-    ctd1 = Path(r"C:\Users\szswe\Desktop\sal_drift\Lorenz_CTD\GINR_Disko_CTD_2024_06_TA24023.cnv")
-    ctd2 = Path(r"C:\Users\szswe\Desktop\sal_drift\Lorenz_CTD\SA25018.cnv")
+    ctd1 = Path(r"C:\Users\szswe\Desktop\sal_drift\Lorenz_CTD_F10052\GINR_Disko_CTD_2024_06_TA24023.cnv")
+    ctd2 = Path(r"C:\Users\szswe\Desktop\sal_drift\Lorenz_CTD_F10052\SA25018.cnv")
 
     time = [to_julian_day(datetime.strptime("2024/06/11T1620", "%Y/%m/%dT%H%M")),
             to_julian_day(datetime.strptime("2025/06/21T1542", "%Y/%m/%dT%H%M"))]  
@@ -882,7 +883,7 @@ def read_lorenze_ctd_data(bin_sizes = None):
         "PSALs": np.squeeze(np.array(list(itertools.zip_longest(*binned_psal, fillvalue=np.nan)), dtype = np.float64).T),
         "TEMPs": np.squeeze(np.array(list(itertools.zip_longest(*binned_temp, fillvalue=np.nan)), dtype = np.float64).T),
         "PRESs": np.squeeze(np.array(list(itertools.zip_longest(*binned_pres, fillvalue=np.nan)), dtype = np.float64).T),
-        "CNDCs": np.squeeze(np.array(binned_cndc)),
+        "CNDCs": np.squeeze(np.array(list(itertools.zip_longest(*binned_cndc, fillvalue=np.nan)), dtype = np.float64).T),
         "LATs": np.squeeze(np.asarray(lat)),
         "LONs": np.squeeze(np.asarray(lon)),
         "JULDs": np.squeeze(np.asarray(time))
@@ -907,13 +908,14 @@ def generate_F9185_F9444_avg_PSAL():
     F9444_data = read_float_apply_qc(nc_filepath)
     
     # Read in need AXCTD data
-    ctd_fp = Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs_2021_Melville")
-    axctd_melville = read_AXCTDs(ctd_fp, 2)
+    # ctd_fp = Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs_2021_Melville")
+    # axctd_melville = read_AXCTDs(ctd_fp, 2)
     # This CTD looks to be a bit far from the profile?
-    ctd_fp_2 = Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs2020")
+    ctd_fp_2 = Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs\Melville_2020\AXCTD-01 TSK Air-launched 20200911131819_435.edf")
     F9185_deployment_AXCTD = read_AXCTDs(ctd_fp_2, 2)
-    # Read in weird float data
-    
+
+    ctd_fp = Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\CSV_FILES\2025_07_27_F9444\060671_20250727_1003_downcast_data.csv")
+    nicole_summer_ctd = read_regular_file(ctd_fp, "2025-07-27 10:03:00", ['Pressure_dbar', 'Temperature_C', 'Salinity_PSU'])
 
     # Get overlapping data
     # F9185_data, F9444_data = filter_float_overlap_date_range(F9185_data, "F9185", F9444_data, "F9444", just_overlap=False)
@@ -923,15 +925,15 @@ def generate_F9185_F9444_avg_PSAL():
     pres_max = 600
     F9185_data = filter_pres_levels(F9185_data, pres_min, pres_max)
     F9444_data = filter_pres_levels(F9444_data, pres_min, pres_max)
+    nicole_summer_ctd = filter_pres_levels(nicole_summer_ctd, pres_min, pres_max)
     F9185_deployment_AXCTD = filter_pres_levels(F9185_deployment_AXCTD, pres_min, pres_max)
-    axctd_melville = filter_pres_levels(axctd_melville, pres_min, pres_max)
-    F11678_data = filter_pres_levels(float_data_11678, pres_min, pres_max)
+    # axctd_melville = filter_pres_levels(axctd_melville, pres_min, pres_max)
     # find AVG PSAL
-    F9185_avg_psal = np.nanmean(F9185_data["PSALs"], axis=1)
-    F9444_avg_psal = np.nanmean(F9444_data["PSALs"], axis=1)
+    F9185_avg_psal = np.nanmean(F9185_data["PSALs"] + 0.025, axis=1)
+    F9444_avg_psal = np.nanmean(F9444_data["PSALs"] + 0.025, axis=1)
+    nicole_summer_ctd_avg_psal = np.nanmean(nicole_summer_ctd["PSALs"])
     F9185_deployment_AXCTD_avg_psal = np.nanmean(F9185_deployment_AXCTD["PSALs"]) 
-    axctd_melville_avg_psal = np.nanmean(axctd_melville["PSALs"])
-    F11678_avg_psal = np.nanmean(F11678_data["PSALs"], axis=1)
+    # axctd_melville_avg_psal = np.nanmean(axctd_melville["PSALs"])
     
     # Plot
     fig, ax = plt.subplots()
@@ -943,13 +945,10 @@ def generate_F9185_F9444_avg_PSAL():
     plt.scatter(F9444_data["JULDs"], F9444_avg_psal, color = "blue")
     plt.plot(F9444_data["JULDs"], F9444_avg_psal, color = "blue")
     
-    F11678_data["JULDs"] = np.array([from_julian_day(j) for j in F11678_data["JULDs"]])
-    plt.scatter(F11678_data["JULDs"], F11678_avg_psal, color = "orange")
-    plt.plot(F11678_data["JULDs"], F11678_avg_psal, color = "orange")
-    
+    plt.scatter(from_julian_day(nicole_summer_ctd["JULDs"]), nicole_summer_ctd_avg_psal, color = "orange")
     plt.scatter(from_julian_day(F9185_deployment_AXCTD["JULDs"]), F9185_deployment_AXCTD_avg_psal, color = "green")
     # axctd_melville["JULDs"] = np.array([from_julian_day(j) for j in axctd_melville["JULDs"]])
-    plt.scatter(from_julian_day(axctd_melville["JULDs"]), axctd_melville_avg_psal, color = "purple")
+    # plt.scatter(from_julian_day(axctd_melville["JULDs"]), axctd_melville_avg_psal, color = "purple")
  
     plt.grid(visible=True)
     plt.xlabel("Date")
@@ -958,13 +957,12 @@ def generate_F9185_F9444_avg_PSAL():
                 Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),
                 Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', markersize=10),
                 Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='purple', markersize=10),
                 Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10)
                 ]
     # Add legend to the plot
     ax.legend(
         custom_legend,
-        ["F9185", "F9444", "F9185 Deployment AXCTD", "Melville AXCTD"],  # Custom labels
+        ["F9185 + 0.025", "F9444  + 0.025", "F9185 Deployment AXCTD", "Nicole Summer CTD"],  # Custom labels
         loc='lower left', title="Data Quality"
     )
     plt.title(f"Avg PSAL F9185 and F9444 depth range {pres_min}-{pres_max}")
@@ -986,32 +984,33 @@ def generate_F9185_F9444_PSAL_at_TEMP():
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9444\F9444_VI")
     F9444_data = read_float_apply_qc(nc_filepath)
     
-    # Read in need AXCTD data
-    ctd_fp = Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs_2021_Melville")
-    axctd_melville = read_AXCTDs(ctd_fp, 2)
-    # This CTD looks to be a bit far from the profile?
-    ctd_fp_2 = Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs2020")
+    # F9185 Deployment CTD
+    ctd_fp_2 = Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs\Melville_2020\AXCTD-01 TSK Air-launched 20200911131819_435.edf")
     F9185_deployment_AXCTD = read_AXCTDs(ctd_fp_2, 2)
+    # Nicole Summer CTD
+    ctd_fp = Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\CSV_FILES\2025_07_27_F9444\060671_20250727_1003_downcast_data.csv")
+    nicole_summer_ctd = read_regular_file(ctd_fp, "2025-07-27 10:03:00", ['Pressure_dbar', 'Temperature_C', 'Salinity_PSU'])
 
-    # Get overlapping data
-    # F9185_data, F9444_data = filter_float_overlap_date_range(F9185_data, "F9185", F9444_data, "F9444", just_overlap=False)
+    # # Add 0.025 offset to both floats
+    F9185_data["PSALs"] = F9185_data["PSALs"] + 0.025
+    F9444_data["PSALs"] = F9444_data["PSALs"] + 0.025
     
     # Filter PRES levels
-    pres_min = 300
-    pres_max = 900
+    pres_min = 200
+    pres_max = 400
     F9185_data = filter_pres_levels(F9185_data, pres_min, pres_max)
     F9444_data = filter_pres_levels(F9444_data, pres_min, pres_max)
     F9185_deployment_AXCTD = filter_pres_levels(F9185_deployment_AXCTD, pres_min, pres_max)
-    axctd_melville = filter_pres_levels(axctd_melville, pres_min, pres_max)
+    nicole_summer_ctd = filter_pres_levels(nicole_summer_ctd, pres_min, pres_max)
 
     # Linear interpolated temp to find PSAL at specific TEMP
-    target_temp = 2
+    target_temp = 1.8
     show_graph = False
     F9185_psal_at_temp = find_psal_at_temp(target_temp, F9185_data, show_linear_temp_graph=show_graph)
     F9444_psal_at_temp = find_psal_at_temp(target_temp, F9444_data, show_linear_temp_graph=show_graph)
     F9185_deployment_AXCTD_psal_at_temp = find_psal_at_temp(target_temp, F9185_deployment_AXCTD, show_linear_temp_graph=show_graph)
-    axctd_melville_psal_at_temp = find_psal_at_temp(target_temp, axctd_melville, show_linear_temp_graph=show_graph)
-    
+    nicole_summer_ctd_psal_at_temp = find_psal_at_temp(target_temp, nicole_summer_ctd, show_linear_temp_graph=show_graph)
+
     # Plot
     fig, ax = plt.subplots()
 
@@ -1023,8 +1022,8 @@ def generate_F9185_F9444_PSAL_at_TEMP():
     plt.plot(F9444_data["JULDs"], F9444_psal_at_temp, color = "blue")
 
     plt.scatter(from_julian_day(F9185_deployment_AXCTD["JULDs"]), F9185_deployment_AXCTD_psal_at_temp, color = "green")
-    # axctd_melville["JULDs"] = np.array([from_julian_day(j) for j in axctd_melville["JULDs"]])
-    plt.scatter(from_julian_day(axctd_melville["JULDs"]), axctd_melville_psal_at_temp, color = "purple")
+    # nicole_summer_ctd["JULDs"] = np.array([from_julian_day(j) for j in nicole_summer_ctd["JULDs"]])
+    plt.scatter(from_julian_day(nicole_summer_ctd["JULDs"]), nicole_summer_ctd_psal_at_temp, color = "purple")
  
     plt.grid(visible=True)
     plt.xlabel("Date")
@@ -1038,7 +1037,7 @@ def generate_F9185_F9444_PSAL_at_TEMP():
     # Add legend to the plot
     ax.legend(
         custom_legend,
-        ["F9185", "F9444", "F9185 Deployment AXCTD", "Melville AXCTD"],  # Custom labels
+        ["F9185 + 0.025", "F9444 + 0.025", "F9185 Deployment AXCTD", "Nicole Summer CTD"],  # Custom labels
         loc='lower left', title="Data Quality"
     )
 
@@ -1058,7 +1057,7 @@ def generate_F10052_avg_PSAL():
     F10052_data = read_float_apply_qc(nc_filepath)
     # Read in CTD data
     # ROWS: Timestamp,Temperature_C,Salinity_PSU,Turbidity_NTU,PAR,Pressure_dbar,N2_1_per_s2
-    ORP_WOOD_CTD = read_regular_file(Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\CSV_FILES\2025_0712_F10052\060671_20250712_2329DUNDEE_downcast_data.csv"),
+    ORP_WOOD_CTD = read_regular_file(Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\CSV_FILES\2025_07_12_F10052\060671_20250712_2329DUNDEE_downcast_data.csv"),
                                             "2025-07-12 00:00:00",
                                             ['Pressure_dbar', 'Temperature_C', 'Salinity_PSU'])
     # Read in GEM and bottle data 
@@ -1066,6 +1065,9 @@ def generate_F10052_avg_PSAL():
     # bottle_data = read_bottle_data(Path(r"C:\Users\szswe\Desktop\sal_drift\bottle_data\Saltprøveskema Grønland Disko 25-39868, all 2024.xls"))
     # Read in lorenze CTD data
     lorenze_ctd_data = read_lorenze_ctd_data(bin_sizes=[0, 1])
+    deployment_CTD = read_regular_file(Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\TXT_FILES\Nicole_CTD\060671_20230830_2344_F9184_F10052\060671_20230830_2344_data.txt"),
+                                            "2023-08-30 00:00:00", 
+                                            ['Sea pressure', 'Temperature', 'Salinity'])
 
     # Filter PRES levels
     pres_min = 150
@@ -1074,11 +1076,14 @@ def generate_F10052_avg_PSAL():
     ORP_WOOD_CTD = filter_pres_levels(ORP_WOOD_CTD, pres_min, pres_max)
     corr_GEM = filter_pres_levels(corr_GEM, pres_min, pres_max)
     lorenze_ctd_data = filter_pres_levels(lorenze_ctd_data, pres_min, pres_max)
+    deployment_CTD = filter_pres_levels(deployment_CTD, pres_min, pres_max)
     # find AVG PSAL
+    F10052_data["PSALs"] = F10052_data["PSALs"] +0.025
     F10052_avg_psal = np.nanmean(F10052_data["PSALs"], axis=1)
     ORP_WOOD_CTD_avg_psal = np.nanmean(ORP_WOOD_CTD["PSALs"])
     corr_GEM_avg_psal = np.nanmean(corr_GEM["PSALs"], axis=1)
     lorenze_ctd_avg_psal = np.nanmean(lorenze_ctd_data["PSALs"], axis=1)
+    deployment_CTD_avg_psal = np.nanmean(deployment_CTD["PSALs"])
 
     # Plot
     fig, ax = plt.subplots()
@@ -1093,6 +1098,7 @@ def generate_F10052_avg_PSAL():
     
     plt.scatter(lorenze_ctd_data["JULDs"], lorenze_ctd_avg_psal, color = "orange")
     plt.scatter(from_julian_day(ORP_WOOD_CTD["JULDs"]), ORP_WOOD_CTD_avg_psal, color = "purple")
+    plt.scatter(from_julian_day(deployment_CTD["JULDs"]), deployment_CTD_avg_psal, color = "green")
     
     # for i in range(bottle_data["date"].shape[0]): # returns 11
     #     ax.scatter(bottle_data["date"][i], bottle_data["sample1"][:, i], color="red", s=20)
@@ -1105,14 +1111,14 @@ def generate_F10052_avg_PSAL():
     custom_legend = [
                 Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),
                 Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', markersize=10),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),
                 Line2D([0], [0], marker='o', color='w', markerfacecolor='purple', markersize=10),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10)
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10)
                 ]
     # Add legend to the plot
     ax.legend(
         custom_legend,
-        ["F10052", "CORR_GEM", "ORP_WOOD_CTD", "LORENZE_CTD"],  # Custom labels
+        ["F10052 + 0.025", "CORR_GEM", "LORENZE_CTD", "ORP_WOOD_CTD", "Nicole ORP WOOD"],  # Custom labels
         loc='lower left', title="Data Quality"
     )
     plt.title(f"Avg PSAL F10052 {pres_min}-{pres_max}")
@@ -1202,6 +1208,68 @@ def generate_F10052_PSAL_at_TEMP(TT, save_dir):
     plt.title(f"PSAL at {target_temp}°C F10052 {pres_min}-{pres_max}")
     plt.savefig(os.path.join(save_dir, f"F10052_PSAL_at_{target_temp}C.png"))
     plt.close()
+def generate_F10052_TS():
+    # Read in F10052
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10052\F10052_FTR")
+    F10052_data = read_float_apply_qc(nc_filepath)
+    # Read in CTD data
+    # ROWS: Timestamp,Temperature_C,Salinity_PSU,Turbidity_NTU,PAR,Pressure_dbar,N2_1_per_s2
+    ORP_WOOD_CTD = read_regular_file(Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\CSV_FILES\2025_07_12_F10052\060671_20250712_2329DUNDEE_downcast_data.csv"),
+                                            "2025-07-12 00:00:00",
+                                            ['Pressure_dbar', 'Temperature_C', 'Salinity_PSU'])
+    # Read in GEM and bottle data 
+    corr_GEM = read_corrected_gem_data()
+    # bottle_data = read_bottle_data(Path(r"C:\Users\szswe\Desktop\sal_drift\bottle_data\Saltprøveskema Grønland Disko 25-39868, all 2024.xls"))
+    # Read in lorenze CTD data
+    lorenze_ctd_data = read_lorenze_ctd_data(bin_sizes=[0, 1])
+    deployment_CTD = read_regular_file(Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\TXT_FILES\Nicole_CTD\060671_20230830_2344_F9184_F10052\060671_20230830_2344_data.txt"),
+                                            "2023-08-30 00:00:00", 
+                                            ['Sea pressure', 'Temperature', 'Salinity'])
+
+    
+    ### DATA PREP ### - 3 profiles for F10052
+    # Nicole's Deployment CTD, F10052 profiles filtered for closest in location and date
+    # source_title = "Nicole ORP WOOD"
+    # source_data = deployment_CTD
+    # F10052_data["PROFILE_NUMS"] = F10052_data["PROFILE_NUMS"].astype(float)
+    # F10052_data["JULDs"][(F10052_data["PROFILE_NUMS"] != 15) & (F10052_data["PROFILE_NUMS"] != 16) & (F10052_data["PROFILE_NUMS"] != 17)] = np.nan
+    ########################## LORENZE (first CTD) ############################
+    # source_title = "Lorenze CTD"
+    # lorenze_ctd_data["PSALs"] = lorenze_ctd_data["PSALs"][0]
+    # lorenze_ctd_data["TEMPs"] = lorenze_ctd_data["TEMPs"][0]
+    # lorenze_ctd_data["PRESs"] = lorenze_ctd_data["PRESs"][0]
+    # lorenze_ctd_data["CNDCs"] = lorenze_ctd_data["CNDCs"][0]
+    # lorenze_ctd_data["LATs"] = lorenze_ctd_data["LATs"][0]
+    # lorenze_ctd_data["LONs"] = lorenze_ctd_data["LONs"][0]
+    # lorenze_ctd_data["JULDs"] = lorenze_ctd_data["JULDs"][0]
+    # source_data = lorenze_ctd_data  
+    # F10052_data["JULDs"][np.where(np.abs(F10052_data["JULDs"] - source_data["JULDs"]) > 10)] = np.nan
+    ########################## LORENZE (2nd CTD) ############################
+    # source_title = "Lorenze 2nd CTD"
+    # lorenze_ctd_data["PSALs"] = lorenze_ctd_data["PSALs"][1]
+    # lorenze_ctd_data["TEMPs"] = lorenze_ctd_data["TEMPs"][1]
+    # lorenze_ctd_data["PRESs"] = lorenze_ctd_data["PRESs"][1]
+    # lorenze_ctd_data["CNDCs"] = lorenze_ctd_data["CNDCs"][1]
+    # lorenze_ctd_data["LATs"] = lorenze_ctd_data["LATs"][1]
+    # lorenze_ctd_data["LONs"] = lorenze_ctd_data["LONs"][1]
+    # lorenze_ctd_data["JULDs"] = lorenze_ctd_data["JULDs"][1]
+    # source_data = lorenze_ctd_data  
+    # F10052_data["JULDs"][np.where(np.abs(F10052_data["JULDs"] - source_data["JULDs"]) > 9)] = np.nan
+    ########################## ORP WOOD CTD ############################
+    source_title = "ORP WOOD CTD"
+    source_data = ORP_WOOD_CTD
+    F10052_data["JULDs"][np.where(np.abs(F10052_data["JULDs"] - source_data["JULDs"]) > 9)] = np.nan
+
+    for i in np.arange(F10052_data["JULDs"].shape[0]):
+        if not np.isnan(F10052_data["JULDs"][i]):
+            print(f"F10052 Prof number {F10052_data['PROFILE_NUMS'][i]} DT: {from_julian_day(F10052_data['JULDs'][i])}")
+    print(f"{source_title}: ", from_julian_day(source_data["JULDs"]))
+
+    F10052_data["PSALs"] = F10052_data["PSALs"]
+    data = [F10052_data, source_data]
+    list_of_labels = ["F10052", source_title]
+    make_TS_plot(data, list_of_labels)
+    
 # F9444
 def F9444_avg_PSAL():
     """
@@ -1477,7 +1545,7 @@ def F9443_avg_PSAL():
     Hardcoded float path and pressure range.
     """
     # Read in F9443
-    nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_VI")
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\FLOAT_DATA\F9443\DMODE\F9443_0\F9443_0_FROM_ARGO")
     F9443_data = read_float_apply_qc(nc_filepath)
     # CTDs
     ORP_WOOD_fp = Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\CSV_FILES\2025_07_14_F9443\060671_20250714_1029_downcast_data.csv")
@@ -1489,6 +1557,9 @@ def F9443_avg_PSAL():
     float_11678_fp = Path(r"C:\Users\szswe\Desktop\sal_drift\11678_ascent_cleaned.txt")
     float_data_11678 = read_float_11678(float_11678_fp)
     
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\FLOAT_DATA\F9184\DMODE\F9184_0\F9184_0_FROM_ARGO")
+    F9184_data = read_float_apply_qc(nc_filepath)
+    
     # Filter PRES levels
     pres_min = 500
     pres_max = 600
@@ -1498,6 +1569,7 @@ def F9443_avg_PSAL():
     axctd_310 = filter_pres_levels(axctd_310, pres_min, pres_max)
     axctd_309 = filter_pres_levels(axctd_309, pres_min, pres_max)
     float_data_11678 = filter_pres_levels(float_data_11678, pres_min, pres_max)
+    F9184_data = filter_pres_levels(F9184_data, pres_min, pres_max)
     # find AVG PSAL
     F9443_avg_psal = np.nanmean(F9443_data["PSALs"], axis=1)
     orp_wood_avg_psal = np.nanmean(orp_wood["PSALs"])
@@ -1505,6 +1577,7 @@ def F9443_avg_PSAL():
     axctd_310_avg_psal = np.nanmean(axctd_310["PSALs"])
     axctd_309_avg_psal = np.nanmean(axctd_309["PSALs"]) 
     float_data_11678_avg_psal = np.nanmean(float_data_11678["PSALs"], axis=1)
+    F9184_data_avg_PSAL = np.nanmean(F9184_data["PSALs"], axis=1)
 
     # Plot
     fig, ax = plt.subplots()
@@ -1512,8 +1585,13 @@ def F9443_avg_PSAL():
     F9443_data["JULDs"] = np.array([from_julian_day(j) for j in F9443_data["JULDs"]])
     plt.scatter(F9443_data["JULDs"], F9443_avg_psal, color = "red")
     plt.plot(F9443_data["JULDs"], F9443_avg_psal, color = "red")
+
+    F9184_data["JULDs"] = np.array([from_julian_day(j) for j in F9184_data["JULDs"]])
+    plt.scatter(F9184_data["JULDs"], F9184_data_avg_PSAL, color = "green")
+    plt.plot(F9184_data["JULDs"], F9184_data_avg_PSAL, color = "green")
+
     plt.scatter(from_julian_day(orp_wood["JULDs"]), orp_wood_avg_psal, color = "orange")
-    plt.scatter(from_julian_day(axctd_306["JULDs"]), axctd_306_avg_psal, color = "green")
+    # plt.scatter(from_julian_day(axctd_306["JULDs"]), axctd_306_avg_psal, color = "green")
     plt.scatter(from_julian_day(axctd_310["JULDs"]), axctd_310_avg_psal, color = "purple")
     plt.scatter(from_julian_day(axctd_309["JULDs"]), axctd_309_avg_psal, color = "pink")
     
@@ -1535,7 +1613,7 @@ def F9443_avg_PSAL():
     # Add legend to the plot
     ax.legend(
         custom_legend,
-        ["F9443", "ORP_WOOD", "AXCTD_306", "AXCTD_310", "AXCTD_309", "11678"],  # Custom labels
+        ["F9443", "ORP_WOOD", "F9184", "AXCTD_310", "AXCTD_309", "11678"],  # Custom labels
         loc='lower left', title="Data Quality"
     )
     plt.title(f"Avg PSAL F9443 depth range {pres_min}-{pres_max}")
@@ -1558,6 +1636,9 @@ def F9443_PSAL_AT_TEMP(TT, save_dir):
     # Read in F9443
     nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_VI")
     F9443_data = read_float_apply_qc(nc_filepath)
+    # Read in F9184
+    nc_filepath = Path(r"C:\Users\szswe\Desktop\FLOAT_DATA\F9184\DMODE\F9184_0\F9184_0_FROM_ARGO")
+    F9184_data = read_float_apply_qc(nc_filepath)
     # CTDs
     ORP_WOOD_fp = Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\CSV_FILES\2025_07_14_F9443\060671_20250714_1029_downcast_data.csv")
     orp_wood = read_regular_file(ORP_WOOD_fp, "2025-07-14 10:29:00", ['Pressure_dbar', 'Temperature_C', 'Salinity_PSU'])
@@ -1577,6 +1658,7 @@ def F9443_PSAL_AT_TEMP(TT, save_dir):
     axctd_310 = filter_pres_levels(axctd_310, pres_min, pres_max)
     axctd_309 = filter_pres_levels(axctd_309, pres_min, pres_max)
     float_data_11678 = filter_pres_levels(float_data_11678, pres_min, pres_max)
+    F9184_data = filter_pres_levels(F9184_data, pres_min, pres_max)
     # find PSAL at TEMP
     target_temp = TT
     show_graph = False
@@ -1639,6 +1721,10 @@ def F9443_TS():
     # Read in CTD
     orp_wood_fp = Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\CSV_FILES\2025_07_14_F9443\060671_20250714_1029_downcast_data.csv")
     nicole_summer_ctd = read_regular_file(orp_wood_fp, "2025-07-14 10:29:00", ['Pressure_dbar', 'Temperature_C', 'Salinity_PSU'])
+    # Read in AXCTDs
+    axctd_306 = read_AXCTDs(Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs\F9443\AXCTD-01 TSK Air-launched 20210812132422_306.edf"), 2)
+    axctd_310 = read_AXCTDs(Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs\F9443\AXCTD-01 TSK Air-launched 20210812132756_310.edf"), 2)
+    axctd_309 = read_AXCTDs(Path(r"C:\Users\szswe\Desktop\sal_drift\AXCTDs\F9443\AXCTD-01 TSK Air-launched 20210812134137_309.edf"), 2)
 
     # Filters F9443 to overlap with F11678
     # F9443_data["JULDs"][np.where((F9443_data["PROFILE_NUMS"] < 319) | (F9443_data["PROFILE_NUMS"] > 324))] = np.nan
@@ -1653,21 +1739,212 @@ def F9443_TS():
     #     if not np.isnan(float_data_11678["JULDs"][i]):
     #         print(f"F11678 DT: {from_julian_day(float_data_11678['JULDs'][i])}")
 
-    # Get overlap bw float and nicole
-    F9443_data["JULDs"][np.where(np.abs(F9443_data["JULDs"] - nicole_summer_ctd["JULDs"]) > 7)] = np.nan
+    ################# Get overlap bw float and nicole
+    # F9443_data["JULDs"][np.where(np.abs(F9443_data["JULDs"] - nicole_summer_ctd["JULDs"]) > 7)] = np.nan
+    # source_title = "Nicole's Summer CTD"
+    ################# Get overlap bw float and AXCTDs
+    # source_title = "Melville 2021 AXCTDs 306"
+    # F9443_data["JULDs"][np.where(np.abs(F9443_data["JULDs"] - axctd_306["JULDs"]) > 31)] = np.nan
+    # source_title = "Melville 2021 AXCTDs 310"
+    # F9443_data["JULDs"][np.where(np.abs(F9443_data["JULDs"] - axctd_310["JULDs"]) > 31)] = np.nan
+    source_title = "Melville 2021 AXCTDs 309"
+    F9443_data["JULDs"][np.where(np.abs(F9443_data["JULDs"] - axctd_309["JULDs"]) > 31)] = np.nan
+
     for i in np.arange(F9443_data["JULDs"].shape[0]):
         if not np.isnan(F9443_data["JULDs"][i]):
             print(f"F9443 Prof number {F9443_data['PROFILE_NUMS'][i]} DT: {from_julian_day(F9443_data['JULDs'][i])}")
-    print("Nicole's summer CTD DT: ", from_julian_day(nicole_summer_ctd["JULDs"]))
+    print(f"{source_title} DT: ", from_julian_day(nicole_summer_ctd["JULDs"]))
     
-    F9443_data["PSALs"] = F9443_data["PSALs"] + 0.025
+
+    F9443_data["PSALs"] = F9443_data["PSALs"]
     data = [F9443_data, nicole_summer_ctd]
-    list_of_labels = ["F9443 + 0.025", "Nicole's Summer CTD"]
+    list_of_labels = ["F9443", source_title]
     make_TS_plot(data, list_of_labels)
 
+def generate_F10051_F9186():
+    """
+    Compare F10051 and F9186 average salinity vs two ORP WOOD CTD casts.
+
+    Data sources:
+      - F10051 float profiles (F10051_FTR)
+      - F9186 float profiles (F9186_FTR)
+      - 2025-07-24 ORP WOOD downcast CSV (nearest CTD to F10051)
+      - 2023-07-25 F10051 deployment CTD TXT
+
+    Filters to 200–600 dbar, computes mean PSAL per profile, and plots time series.
+    """
+    # Read floats
+    F10051_data = read_float_apply_qc(Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10051\F10051_VI_ascent"))
+    # F9186_data  = read_float_apply_qc(Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9186\F9186_FTR"))
+
+    # 2025 ORP WOOD downcast CTD near F10051
+    ORP_WOOD_2025 = read_regular_file(
+        Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\CSV_FILES\2025_07_24_F10051\060671_20250724_0420_downcast_data.csv"),
+        "2025-07-24 04:20:00",
+        ['Pressure_dbar', 'Temperature_C', 'Salinity_PSU']
+    )
+
+    # 2023 F10051 deployment CTD
+    deployment_CTD = read_regular_file(
+        Path(r"C:\Users\szswe\Desktop\sal_drift\ORP_WOOD\TXT_FILES\F10051_Deployment_CTD\20230725_1832\204223_20230725_1832_data.txt"),
+        "2023-07-25 19:23:00",
+        ['Sea pressure', 'Temperature', 'Salinity']
+    )
+
+    # Filter to pressure range
+    pres_min, pres_max = 500, 900
+    F10051_data    = filter_pres_levels(F10051_data,    pres_min, pres_max)
+    # F9186_data     = filter_pres_levels(F9186_data,     pres_min, pres_max)
+    ORP_WOOD_2025  = filter_pres_levels(ORP_WOOD_2025,  pres_min, pres_max)
+    deployment_CTD = filter_pres_levels(deployment_CTD, pres_min, pres_max)
+
+    # Compute avg PSAL
+    F10051_avg_psal     = np.nanmean(F10051_data["PSALs"],   axis=1)
+    # F9186_avg_psal      = np.nanmean(F9186_data["PSALs"],    axis=1)
+    ORP_WOOD_avg_psal   = np.nanmean(ORP_WOOD_2025["PSALs"])
+    deployment_avg_psal = np.nanmean(deployment_CTD["PSALs"])
+
+    # Convert JULDs to datetimes for x-axis
+    F10051_data["JULDs"] = np.array([from_julian_day(j) for j in F10051_data["JULDs"]])
+    # F9186_data["JULDs"]  = np.array([from_julian_day(j) for j in F9186_data["JULDs"]])
+
+    fig, ax = plt.subplots()
+    plt.scatter(F10051_data["JULDs"], F10051_avg_psal, color="red")
+    plt.plot(F10051_data["JULDs"],    F10051_avg_psal, color="red")
+    # plt.scatter(F9186_data["JULDs"],  F9186_avg_psal,  color="blue")
+    # plt.plot(F9186_data["JULDs"],     F9186_avg_psal,  color="blue")
+    plt.scatter(from_julian_day(ORP_WOOD_2025["JULDs"]),  ORP_WOOD_avg_psal,   color="purple")
+    plt.scatter(from_julian_day(deployment_CTD["JULDs"]), deployment_avg_psal, color="green")
+
+    plt.grid(visible=True)
+    plt.xlabel("Date")
+    plt.ylabel("PSAL")
+    custom_legend = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='red',    markersize=10),
+        # Line2D([0], [0], marker='o', color='w', markerfacecolor='blue',   markersize=10),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='green',  markersize=10),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='purple', markersize=10),
+    ]
+    ax.legend(
+        custom_legend,
+        ["F10051", "F10051 Deployment CTD (2023-07-25)", "ORP WOOD CTD (2025-07-24)"],
+        loc='lower left', title="Data Quality"
+    )
+    plt.title(f"Avg PSAL F10051 and F9186 {pres_min}–{pres_max} dbar")
+    plt.show()
+def generate_F0051_F9186_TS():
+    # Read in F10051 Data
+    F10051_data = read_float_apply_qc(Path(r"c:\Users\szswe\Desktop\FLOAT_DATA\F10051\DMODE\F10051_VI"))
+    # Read in F9186 data
+    F9186_data = read_float_apply_qc(Path(r"c:\Users\szswe\Desktop\FLOAT_DATA\F9186\DMODE\F9186_VI"))
+
+    F9186_data["PSALs"] = F9186_data["PSALs"] + 0.025
+    # Filter the data 
+    start_juld = to_julian_day(datetime(2025, 1, 1))
+    end_juld   = to_julian_day(datetime(2025, 5, 1))
+    F10051_data["JULDs"][(F10051_data["JULDs"] < start_juld) | (F10051_data["JULDs"] > end_juld)] = np.nan
+    F9186_data["JULDs"][(F9186_data["JULDs"] < start_juld) | (F9186_data["JULDs"] > end_juld)] = np.nan
+
+    f10051_sel = F10051_data["PROFILE_NUMS"][~np.isnan(F10051_data["JULDs"])]
+    f9186_sel  = F9186_data["PROFILE_NUMS"][~np.isnan(F9186_data["JULDs"])]
+    print(f"F10051: {int(f10051_sel.min())}–{int(f10051_sel.max())} ({len(f10051_sel)} profiles)")
+    print(f"F9186: {int(f9186_sel.min())}–{int(f9186_sel.max())} ({len(f9186_sel)} profiles)")
+
+    # # Filter to deep water only
+    # F10051_data = filter_pres_levels(F10051_data, 500, np.inf)
+    # F9186_data  = filter_pres_levels(F9186_data,  500, np.inf)
+
+    # Generate a TS graph with both floats
+    make_TS_plot([F10051_data, F9186_data], ["F10051", "F9186 + 0.025"])
+def generate_F0051_F9186_PSAL_at_TEMP():
+    F10051_data = read_float_apply_qc(Path(r"c:\Users\szswe\Desktop\FLOAT_DATA\F10051\DMODE\F10051_VI"))
+    F9186_data  = read_float_apply_qc(Path(r"c:\Users\szswe\Desktop\FLOAT_DATA\F9186\DMODE\F9186_VI"))
+
+    F9186_data["PSALs"] = F9186_data["PSALs"] + 0.025
+    # Date filter: FEB 01 2025 – JUL 31 2025
+    start_juld = to_julian_day(datetime(2025, 7, 1))
+    end_juld   = to_julian_day(datetime(2026, 10, 1))
+    F10051_data["JULDs"][(F10051_data["JULDs"] < start_juld) | (F10051_data["JULDs"] > end_juld)] = np.nan
+    F9186_data["JULDs"][(F9186_data["JULDs"] < start_juld) | (F9186_data["JULDs"] > end_juld)] = np.nan
+    f10051_sel = F10051_data["PROFILE_NUMS"][~np.isnan(F10051_data["JULDs"])]
+    f9186_sel  = F9186_data["PROFILE_NUMS"][~np.isnan(F9186_data["JULDs"])]
+    print(f"F10051: {int(f10051_sel.min())}–{int(f10051_sel.max())} ({len(f10051_sel)} profiles)")
+    print(f"F9186: {int(f9186_sel.min())}–{int(f9186_sel.max())} ({len(f9186_sel)} profiles)")
+
+    # Pressure filter: >= 500 dbar
+    F10051_data = filter_pres_levels(F10051_data, 500, np.inf)
+    F9186_data  = filter_pres_levels(F9186_data,  500, np.inf)
+
+    # Temperature filter: < 2.1°C
+    for data in [F10051_data, F9186_data]:
+        temp_mask = data["TEMPs"] >= 2.1
+        data["PSALs"][temp_mask] = np.nan
+        data["PRESs"][temp_mask] = np.nan
+        data["TEMPs"][temp_mask] = np.nan
+
+    # Per-profile least-squares fit: PSAL = m * TEMP + b, evaluated at TEMP = 2.0
+   
+    def _psal_from_linreg(data, target_temp):
+        # Gets number of profiles 
+        n = data["TEMPs"].shape[0]
+        # init output arr - length # of profiles
+        result = np.full(n, np.nan)
+        # For each profile
+        for i in range(n):
+            # get temperature and salinity of the data
+            t, s = data["TEMPs"][i], data["PSALs"][i]
+            # Finds values where BOTH temp and psal is not NAN
+            mask = ~np.isnan(t) & ~np.isnan(s)
+            # Need at least 2 valid points to fit a line
+            if mask.sum() >= 2:
+                # y (PSAL)= m (SLOPE) x (TEMP) + b (OFFSET) 
+                # Fit a line according to temperature and salinity values
+                lr = stats.linregress(t[mask], s[mask])
+                # Result is PSAL = slope * TEMP + offset value
+                result[i] = lr.slope * target_temp + lr.intercept
+        return result
+    target_temp = 2
+    psal10051 = _psal_from_linreg(F10051_data, target_temp)
+    psal9186  = _psal_from_linreg(F9186_data, target_temp)
+
+    # Build date arrays for valid (non-NaN JULD) profiles only, as matplotlib floats
+    valid10051 = ~np.isnan(F10051_data["JULDs"])
+    valid9186  = ~np.isnan(F9186_data["JULDs"])
+    dates10051 = mdates.date2num([from_julian_day(j) for j in F10051_data["JULDs"][valid10051]])
+    dates9186  = mdates.date2num([from_julian_day(j) for j in F9186_data["JULDs"][valid9186]])
+    psal10051  = psal10051[valid10051]
+    psal9186   = psal9186[valid9186]
+
+    f9186_profs = F9186_data["PROFILE_NUMS"][valid9186]
+    for prof, juld, psal in zip(f9186_profs, F9186_data["JULDs"][valid9186], psal9186):
+        print(f"F9186 Prof {int(prof):3d}  {from_julian_day(juld).strftime('%Y-%m-%d')}  PSAL={psal:.4f}")
+
+    # Plot
+    fig, ax = plt.subplots()
+    ax.scatter(dates10051, psal10051, color="red")
+    ax.plot(dates10051,    psal10051, color="red")
+    ax.scatter(dates9186,  psal9186,  color="green")
+    ax.plot(dates9186,     psal9186,  color="green")
+    ax.xaxis_date()
+    ax.legend(handles=[
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='red',   markersize=10, label="F10051"),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10, label="F9186 + 0.025"),
+    ])
+    plt.xlabel("Date")
+    plt.ylabel("PSAL at 2°C")
+    ax.set_title(f"F10051 vs F9186 PSAL at {target_temp}°C (≥500 dbar, TEMP < 2.1°C)")
+    ax.grid(visible=True)
+    plt.tight_layout()
+    plt.show()
+    
 if __name__ == '__main__':
 
-    F9443_TS()   
+    #generate_F10052_avg_PSAL()
+
+    #generate_F10052_TS()
+    generate_F0051_F9186_PSAL_at_TEMP()
+
+    # F9443_avg_PSAL()
     # F9444_TS()
     # TTs = [1.6, 1.7, 1.8, 1.9,
     #        2, 2.1, 2.2, 2.3, 2.4, 2.5]

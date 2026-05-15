@@ -14,14 +14,15 @@ Three main entry-point functions (called from main):
 QC flag values: 0=no QC, 1=good, 2=prob good, 3=prob bad, 4=bad, 5=changed, 8=interpolated
 Julian days referenced to 1950-01-01 00:00:00 UTC.
 """
-import os 
+import tomllib
+import os
 from matplotlib import pyplot as plt
 import numpy as np
 from datetime import datetime
 import pandas as pd
 from scipy.interpolate import interp1d
 from graphs_nc import TS_graph_single_dataset_all_profile, deep_section_var_all, density_inversion_test, flag_TS_data_graphs, flag_range_data_graphs, flag_point_data_graphs, pres_v_var_all
-from tools import from_julian_day, to_julian_day, read_intermediate_nc_file, make_intermediate_nc_file, del_all_nan_slices
+from tools import from_julian_day, to_julian_day, read_intermediate_nc_file, make_intermediate_nc_file
 import gsw 
 from matplotlib.lines import Line2D
 from pathlib import Path
@@ -178,7 +179,9 @@ def juld_check(argo_data):
 
 def count_check(argo_data):
     """
-    Flag profiles with suspicious sample counts as probably bad (QC=3).
+    For profiles with suspicious counts:
+    1) If there is a spike in the PSAL values of more than 15 PSU, mark as bad
+    2) For the last point in each profile, checks if PSAL difference is larger than 0.02 PSU, if so -> mark as bad
 
     Sets PSAL_ADJUSTED_QC and TEMP_ADJUSTED_QC to 3 where NB_SAMPLE_CTD > 100
     or where 0 < NB_SAMPLE_CTD < 1 (but not -99, which indicates missing/N/A).
@@ -193,9 +196,29 @@ def count_check(argo_data):
     argo_data : dict
         Same dict with PSAL_ADJUSTED_QC and TEMP_ADJUSTED_QC updated.
     """
-    count_mask = np.logical_or(argo_data["NB_SAMPLE_CTD"] > 100,  np.logical_and(argo_data["NB_SAMPLE_CTD"] < 1, argo_data["NB_SAMPLE_CTD"] != -99))
-    argo_data["PSAL_ADJUSTED_QC"][count_mask] = 3
-    argo_data["TEMP_ADJUSTED_QC"][count_mask] = 3
+    # Get points with weird counts
+    count_mask = np.logical_or(argo_data["NB_SAMPLE_CTD"] > 100, np.logical_and(argo_data["NB_SAMPLE_CTD"] < 1, argo_data["NB_SAMPLE_CTD"] != -99))
+
+    # For count_mask levels, confirm the spike with a large PSAL gradient to either neighbor.
+    psal = argo_data["PSAL_ADJUSTED"]
+    diffs = np.abs(np.diff(psal, axis=1))                                   # (n_profiles, n_levels-1)
+    diff_forward  = np.pad(diffs, ((0, 0), (0, 1)), constant_values=np.nan) # diff to next level
+    diff_backward = np.pad(diffs, ((0, 0), (1, 0)), constant_values=np.nan) # diff to prev level
+    gradient_mask = (diff_forward > 15) | (diff_backward > 15)
+    
+    final_mask = count_mask & gradient_mask
+    argo_data["PSAL_ADJUSTED_QC"][final_mask] = 4
+
+    # For each profile: if the last valid point is in count_mask AND the last two
+    # PSAL_ADJUSTED points differ by >= 0.02 PSU, mark the last point as bad.
+    n_profiles, n_levels = psal.shape
+    for i in range(n_profiles):
+        valid_idx = np.where(~np.isnan(psal[i]))[0]
+        if len(valid_idx) < 2:
+            continue
+        last, second_last = valid_idx[-1], valid_idx[-2]
+        if count_mask[i, last] and abs(psal[i, last] - psal[i, second_last]) >= 0.02:
+            argo_data["PSAL_ADJUSTED_QC"][i, last] = 4
 
     return argo_data
 
@@ -893,7 +916,7 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
 
     # CHECK 3: verify vals in [VAR]_QC arrs
     # NOTE: refer to argo_quality_control_manual: p.22
-    argo_data = verify_autoset_qc_flags_and_density_inversions(argo_data)
+    # argo_data = verify_autoset_qc_flags_and_density_inversions(argo_data)
 
     # CHECK 4: Set QC flags where counts are too high/low
     argo_data = count_check(argo_data)
@@ -907,12 +930,15 @@ def first_time_run(nc_filepath, dest_filepath, float_num):
     # Write results back to NETCDF file
     make_intermediate_nc_file(argo_data, dest_filepath, float_num)  
 
-def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
+def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num,
+                           flag_points_pres=False, flag_points_psal=False, flag_points_temp=False,
+                           flag_range_pres=False, flag_range_psal=True, flag_range_temp=True,
+                           flag_ts=False):
     """
     Interactive QC flagging session for a single profile.
 
-    Reads intermediate netCDF files, displays a data_snapshot_graph, then shows
-    flag_range_data graphs for PSAL and TEMP. Writes the result back to disk.
+    Reads intermediate netCDF files, displays a data_snapshot_graph, then runs
+    whichever flagging tools are enabled. Writes the result back to disk.
 
     Parameters
     ----------
@@ -924,29 +950,34 @@ def manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num):
         Float identifier (e.g. 'F9186').
     profile_num : int
         Profile number to inspect and flag.
+    flag_points_pres, flag_points_psal, flag_points_temp : bool
+        Flag individual data points for each variable.
+    flag_range_pres, flag_range_psal, flag_range_temp : bool
+        Flag a range of data for each variable.
+    flag_ts : bool
+        Flag data via the TS diagram tool.
     """
-    
-    # Get dir of generated NETCDF files
     argo_data = read_intermediate_nc_file(nc_filepath)
-
     argo_data = data_snapshot_graph(argo_data, profile_num)
 
-    # Flag individual data points
-    #argo_data = flag_data_points(argo_data, profile_num, "PRES")
-    #argo_data = flag_data_points(argo_data, profile_num, "PSAL")
-    #argo_data = flag_data_points(argo_data, profile_num, "TEMP")
+    if flag_points_pres:
+        argo_data = flag_data_points(argo_data, profile_num, "PRES")
+    if flag_points_psal:
+        argo_data = flag_data_points(argo_data, profile_num, "PSAL")
+    if flag_points_temp:
+        argo_data = flag_data_points(argo_data, profile_num, "TEMP")
 
-   
-    # Get rid of range of data
-    # argo_data = flag_range_data(argo_data, profile_num, "PRES")
-    argo_data = flag_range_data(argo_data, profile_num, "PSAL")
-    argo_data = flag_range_data(argo_data, profile_num, "TEMP")
+    if flag_range_pres:
+        argo_data = flag_range_data(argo_data, profile_num, "PRES")
+    if flag_range_psal:
+        argo_data = flag_range_data(argo_data, profile_num, "PSAL")
+    if flag_range_temp:
+        argo_data = flag_range_data(argo_data, profile_num, "TEMP")
 
-    # TS diagram
-    #argo_data = flag_TS_data(argo_data, profile_num)
+    if flag_ts:
+        argo_data = flag_TS_data(argo_data, profile_num)
 
-    # Write results back to NETCDF file
-    make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)  
+    make_intermediate_nc_file(argo_data, dest_filepath, float_num, profile_num)
 
 def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end, prof_num_filter):
     """
@@ -986,7 +1017,7 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
     # Get dir of generated NETCDF files
     argo_data = read_intermediate_nc_file(nc_filepath)
 
-    # Filter date if applicable 
+    # Filter date if applicable
     if date_filter_start is not None and date_filter_end is None:
         # We'll grab data from the start date to end of profile data
         date_filter_start_juld = to_julian_day(datetime.strptime(date_filter_start, "%Y_%m_%d_%H_%M_%S"))
@@ -1035,36 +1066,47 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
             make_intermediate_nc_file(argo_data, dest_filepath, float_num, prof_num)  
 
 
-def main():
-    # float_num = "7902322"
-    # nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_new_0")
-    # dest_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\ftrnew")
+def main(cfg_path=None):
+    with open(cfg_path or Path(__file__).parent / "delayed_mode_config.toml", "rb") as f:
+        cfg = tomllib.load(f)
 
-    # if not os.path.exists(dest_filepath):
-    #     os.mkdir(dest_filepath)
+    sec           = cfg["delayed_mode_processing"]
+    float_num     = sec["float_num"]
+    nc_filepath   = Path(sec["nc_filepath"])
+    dest_filepath = Path(sec["dest_filepath"])
+    dest_filepath.mkdir(parents=True, exist_ok=True)
 
-    nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10052\F10052_FTR")
-    save_dir = Path(r"C:\Users\szswe\Desktop\kml_script\FLOAT_KML_FILES\F10052\images")
-    save_datasnapshot_graphs(nc_filepath, save_dir)
-    
-    # first_time_run(nc_filepath, dest_filepath, float_num)
-    raise Exception
-    profile_num = 198
-    # manipulate_data_flags(nc_filepath, dest_filepath, float_num, profile_num)
-    # raise Exception
-    qc_arr_selection = [0, 1, 2] # only want good/ prob good data 
-    data_type = "TEMP"                 # either PSAL or TEMP
-    use_adjusted = True    
-    prof_num_filter = None
-    # FORMAT: YYYY_MM_DD_HH_MM_SS
-    # If start date is specified with no end date: filters start date - end of profile data
-    # If both: start date - end date
-    # date_filter_start = "2024_01_01_00_00_00"
-    # date_filter_end = "2024_06_01_00_00_00"
-    date_filter_start = None 
-    date_filter_end = None
-    generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection, data_type, use_adjusted, date_filter_start, date_filter_end, prof_num_filter)
+    if sec["run_first_time"]:
+        first_time_run(nc_filepath, dest_filepath, float_num)
+        return
+
+    if sec["run_manipulate_flags"]:
+        mf = sec["manipulate_flags"]
+        manipulate_data_flags(
+            nc_filepath, dest_filepath, float_num,
+            profile_num      = mf["profile_num"],
+            flag_points_pres = mf["flag_points_pres"],
+            flag_points_psal = mf["flag_points_psal"],
+            flag_points_temp = mf["flag_points_temp"],
+            flag_range_pres  = mf["flag_range_pres"],
+            flag_range_psal  = mf["flag_range_psal"],
+            flag_range_temp  = mf["flag_range_temp"],
+            flag_ts          = mf["flag_ts"],
+        )
+        return
+
+    if sec["run_generate_graphs"]:
+        gg = sec["generate_graphs"]
+        qc_arr_selection  = gg["qc_arr_selection"]
+        data_type         = gg["data_type"]
+        use_adjusted      = gg["use_adjusted"]
+        prof_num_filter   = gg.get("prof_num_filter") or None
+        date_filter_start = gg.get("date_filter_start") or None
+        date_filter_end   = gg.get("date_filter_end") or None
+        generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_selection,
+                                data_type, use_adjusted, date_filter_start, date_filter_end,
+                                prof_num_filter)
 
 if __name__ == '__main__':
  
-    main()
+    main() 

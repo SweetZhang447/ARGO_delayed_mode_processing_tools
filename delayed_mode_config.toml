@@ -1,0 +1,39 @@
+# Delayed Mode Processing Configuration
+# Run: python delayed_mode_processing.py
+
+
+# ============================================================
+[delayed_mode_processing]
+# ============================================================
+float_num = "2904018"
+nc_filepath   = 'c:\Users\szswe\Desktop\FLOAT_DATA\F9186\DMODE\F9186_VI'
+dest_filepath = 'c:\Users\szswe\Desktop\FLOAT_DATA\F9186\DMODE\F9186_VI'
+
+# Top-level feature flags: set exactly one to true at a time
+run_first_time               = false
+run_manipulate_flags         = false
+run_generate_graphs          = true
+
+[delayed_mode_processing.manipulate_flags]
+profile_num = 81
+# Flag individual data points
+flag_points_pres = false
+flag_points_psal = false
+flag_points_temp = false
+# Flag a range of data
+flag_range_pres  = false
+flag_range_psal  = true
+flag_range_temp  = true
+# Flag via TS diagram
+flag_ts = false
+
+[delayed_mode_processing.generate_graphs]
+qc_arr_selection = [0, 1, 2]
+data_type    = "PSAL"
+use_adjusted = true
+prof_num_filter   = "347-378"  # set to "" for all profiles
+# Date filters: format "YYYY_MM_DD_HH_MM_SS", or "" for none
+# start only: filters from start date to end of data; both: filters start - end
+date_filter_start = ""
+date_filter_end   = ""
+

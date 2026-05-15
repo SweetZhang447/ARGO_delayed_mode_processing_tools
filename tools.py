@@ -96,15 +96,22 @@ def del_all_nan_slices(argo_data):
     argo_data : dict
         Same dict with all-NaN profiles removed from all arrays.
     """
-    pres_mask = np.isnan(argo_data["PRES_ADJUSTED"]).all(axis=1)
-    temp_mask = np.isnan(argo_data["TEMP_ADJUSTED"]).all(axis=1)
-    psal_mask = np.isnan(argo_data["PSAL_ADJUSTED"]).all(axis=1)
-    # If ANY of these above data arrs are invalid, exclude the data
-    bad_vals_mask =  ~(pres_mask | temp_mask | psal_mask)
+    if argo_data["PRES_ADJUSTED"].size == 0:
+        return argo_data
 
-    argo_data["PRES_ADJUSTED"] = argo_data["PRES_ADJUSTED"][bad_vals_mask]
-    argo_data["TEMP_ADJUSTED"] = argo_data["TEMP_ADJUSTED"][bad_vals_mask]
-    argo_data["PSAL_ADJUSTED"] = argo_data["PSAL_ADJUSTED"][bad_vals_mask]
+    pres_2d = np.atleast_2d(argo_data["PRES_ADJUSTED"])
+    temp_2d = np.atleast_2d(argo_data["TEMP_ADJUSTED"])
+    psal_2d = np.atleast_2d(argo_data["PSAL_ADJUSTED"])
+
+    pres_mask = np.isnan(pres_2d).all(axis=1)
+    temp_mask = np.isnan(temp_2d).all(axis=1)
+    psal_mask = np.isnan(psal_2d).all(axis=1)
+    # If ANY of these above data arrs are invalid, exclude the data
+    bad_vals_mask = ~(pres_mask | temp_mask | psal_mask)
+
+    argo_data["PRES_ADJUSTED"] = pres_2d[bad_vals_mask]
+    argo_data["TEMP_ADJUSTED"] = temp_2d[bad_vals_mask]
+    argo_data["PSAL_ADJUSTED"] = psal_2d[bad_vals_mask]
     
     single_dim_bad_vals_mask = np.where(bad_vals_mask == True)
     argo_data["PROFILE_NUMS"] = argo_data["PROFILE_NUMS"][single_dim_bad_vals_mask]   
@@ -348,5 +355,7 @@ def read_intermediate_nc_file(filepath):
     for a in rename_keys:
         temp_keyname = a[:-1]
         argo_data[a] = argo_data.pop(temp_keyname)
+
+    argo_data = del_all_nan_slices(argo_data)
 
     return argo_data

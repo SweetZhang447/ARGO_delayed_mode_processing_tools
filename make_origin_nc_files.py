@@ -19,9 +19,11 @@ read_ARGO_NETCDF_files : int (0 or 1)
 read_RAW_CSV_files : int (0 or 1)
     1 = read and convert raw RBR float CSV/TXT log files from input_dir.
 """
+import configparser
 import csv
 import glob
-import os 
+import os
+import gsw
 import netCDF4 as nc4
 import numpy as np
 from datetime import datetime, timezone, timedelta
@@ -372,8 +374,10 @@ def read_csv_files(input_filepath, dest_filepath, float_num, broken_float):
 
             PTSCI_timestamps = np.asarray(PTSCI_timestamps)
             TEMP_ADJUSTED =  np.asarray(copy.deepcopy(temps))
-            PSAL_ADJUSTED =  np.asarray(copy.deepcopy(sals))
-            cndc = np.asarray(cndc)/10
+            # Recalculate PSAL from CNDC, TEMP, and PRES
+            PSAL_ADJUSTED = np.asarray(gsw.SP_from_C(cndc, temps, pressures))
+            # Convert from mS/cm -> mhos/m
+            cndc = np.asarray(cndc)/10 
 
             # init VAR_ADJUSTED arrs
             if offset is None:
@@ -573,25 +577,25 @@ def download_file(dload_url, download_dir, float_num):
         print("Failed to download file")
 
 def main():
+    cfg = configparser.ConfigParser(interpolation=None)
+    cfg.read(Path(__file__).parent / "config.txt")
+    sec = "make_origin_nc_files"
 
-    download_ARGO_NETCDF_files = 0
-    dload_url = "https://data-argo.ifremer.fr/dac/aoml/6990591/profiles/"
-    read_ARGO_NETCDF_files = 1
-    read_RAW_CSV_files = 0
+    float_num   = cfg.get("SHARED", "float_num")
+    input_dir   = Path(cfg.get(sec, "input_dir"))
+    dest_filepath = Path(cfg.get(sec, "dest_filepath"))
+    dest_filepath.mkdir(parents=True, exist_ok=True)
 
-    float_num = "7902322"
-    input_dir = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_new")
-    dest_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9443\F9443_new_0")
-
-    if download_ARGO_NETCDF_files == 1:
-        argo_internal_float_num = "6990591"
+    if cfg.getint(sec, "download_argo_netcdf_files"):
+        argo_internal_float_num = cfg.get(sec, "argo_internal_float_num")
+        dload_url = cfg.get(sec, "dload_url")
         download_files(dload_url, input_dir, argo_internal_float_num)
 
-    if read_ARGO_NETCDF_files == 1:
+    if cfg.getint(sec, "read_argo_netcdf_files"):
         read_argo_nc_files(input_dir, dest_filepath, float_num)
 
-    if read_RAW_CSV_files == 1:
-        broken_float = 0
+    if cfg.getint(sec, "read_raw_csv_files"):
+        broken_float = cfg.getint(sec, "broken_float")
         read_csv_files(input_dir, dest_filepath, float_num, broken_float)
     
 if __name__ == '__main__':

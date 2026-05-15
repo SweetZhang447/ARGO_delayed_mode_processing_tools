@@ -20,6 +20,7 @@ If org_argo_netcdf_filepath is provided to process_data_dmode_files(), certain
 metadata (date_creation, existing HISTORY/SCIENTIFIC_CALIB entries) is copied
 from the original real-time files.
 """
+import tomllib
 import copy
 import glob
 import numpy as np
@@ -836,7 +837,7 @@ def calc_overall_profile_qc(qc_arr):
         return 'C'
     elif grade >= 25 and grade < 50:
         return 'D'
-    elif grade >= 0 and grade < 25:
+    elif grade > 0 and grade < 25:
         return 'E'
     else:
         return 'F'
@@ -858,7 +859,8 @@ def convert_qc_to_s1(qc_array):
     str
         String of single-character QC digits with spaces for NaN.
     """
-    qc_str = np.where(np.isnan(qc_array), " ", qc_array.astype(int).astype(str))
+    safe = np.where(np.isnan(qc_array), 0, qc_array).astype(int).astype(str)
+    qc_str = np.where(np.isnan(qc_array), " ", safe)
     return qc_str.astype("S1")
 
 def format_argo_data(data, step):
@@ -911,26 +913,52 @@ def format_argo_data(data, step):
         data["TEMP_ADJUSTED"][temp_mask] = 99999.0
         data["TEMP_ADJUSTED_ERROR"][temp_mask] = 99999.0
 
+        # CK_0078/79: PARAM_QC and PARAM_ADJUSTED_QC must both be ' ' or neither.
+        # Use the union of raw+adjusted NaN masks so they always match.
+        # Also propagate fill to both data arrays so CK_0079 (blank QC → adj must be fill) passes.
+        pres_fill = np.isnan(data["PRES"]) | np.isnan(data["PRES_ADJUSTED"])
+        psal_fill = np.isnan(data["PSAL"]) | np.isnan(data["PSAL_ADJUSTED"])
+        temp_fill = np.isnan(data["TEMP"]) | np.isnan(data["TEMP_ADJUSTED"])
+        cndc_nan  = np.isnan(data["CNDC"])
+
         # turn NaN's to fill vals
         data["NB_SAMPLE_CTD"][np.isnan(data["NB_SAMPLE_CTD"])] = 0
-        data["CNDC"][np.isnan(data["CNDC"])] = 99999.0
+        data["CNDC"][cndc_nan] = 99999.0
         data["TEMP_CNDC"][np.isnan(data["TEMP_CNDC"])] = 99999.0
 
-        data["PRES"][np.isnan(data["PRES"])] = 99999.0
-        data["PRES_ADJUSTED"][np.isnan(data["PRES_ADJUSTED"])] = 99999.0
-        data["PRES_ADJUSTED_ERROR"][np.isnan(data["PRES_ADJUSTED_ERROR"])] = 99999.0
+        data["PRES"][pres_fill] = 99999.0
+        data["PRES_ADJUSTED"][pres_fill] = 99999.0
+        data["PRES_ADJUSTED_ERROR"][pres_fill] = 99999.0
 
-        data["PSAL"][np.isnan(data["PSAL"])] = 99999.0
-        data["PSAL_ADJUSTED"][np.isnan(data["PSAL_ADJUSTED"])] = 99999.0
-        data["PSAL_ADJUSTED_ERROR"][np.isnan(data["PSAL_ADJUSTED_ERROR"])] = 99999.0
+        data["PSAL"][psal_fill] = 99999.0
+        data["PSAL_ADJUSTED"][psal_fill] = 99999.0
+        data["PSAL_ADJUSTED_ERROR"][psal_fill] = 99999.0
 
-        data["TEMP"][np.isnan(data["TEMP"])] = 99999.0
-        data["TEMP_ADJUSTED"][np.isnan(data["TEMP_ADJUSTED"])] = 99999.0
-        data["TEMP_ADJUSTED_ERROR"][np.isnan(data["TEMP_ADJUSTED_ERROR"])] = 99999.0
+        data["TEMP"][temp_fill] = 99999.0
+        data["TEMP_ADJUSTED"][temp_fill] = 99999.0
+        data["TEMP_ADJUSTED_ERROR"][temp_fill] = 99999.0
+
+        # Sync any remaining _ADJUSTED_ERROR NaNs and the QC=4/9-masked levels
+        data["PRES_ADJUSTED_ERROR"][data["PRES_ADJUSTED"] == 99999.0] = 99999.0
+        data["PSAL_ADJUSTED_ERROR"][data["PSAL_ADJUSTED"] == 99999.0] = 99999.0
+        data["TEMP_ADJUSTED_ERROR"][data["TEMP_ADJUSTED"] == 99999.0] = 99999.0
+
+        # Set QC to ' ' using the same union mask for both raw and adjusted (CK_0078/79)
+        data["PRES_QC"][pres_fill] = np.nan
+        data["PRES_ADJUSTED_QC"][pres_fill] = np.nan
+        data["PSAL_QC"][psal_fill] = np.nan
+        data["PSAL_ADJUSTED_QC"][psal_fill] = np.nan
+        data["TEMP_QC"][temp_fill] = np.nan
+        data["TEMP_ADJUSTED_QC"][temp_fill] = np.nan
+        data["CNDC_QC"][cndc_nan] = np.nan
 
         # convert QC arrs to S1 type + turn nans into fillval
         data["JULD_QC"] = convert_qc_to_s1(data["JULD_QC"])
         data["POSITION_QC"] = convert_qc_to_s1(data["POSITION_QC"])
+        data["PRES_QC"] = convert_qc_to_s1(data["PRES_QC"])
+        data["PSAL_QC"] = convert_qc_to_s1(data["PSAL_QC"])
+        data["TEMP_QC"] = convert_qc_to_s1(data["TEMP_QC"])
+        data["CNDC_QC"] = convert_qc_to_s1(data["CNDC_QC"])
         data["PRES_ADJUSTED_QC"] = convert_qc_to_s1(data["PRES_ADJUSTED_QC"])
         data["PSAL_ADJUSTED_QC"] = convert_qc_to_s1(data["PSAL_ADJUSTED_QC"])
         data["TEMP_ADJUSTED_QC"] = convert_qc_to_s1(data["TEMP_ADJUSTED_QC"])
@@ -1204,7 +1232,8 @@ def set_sci_calib_parems(final_nc_data_prof, param_to_set, **kwargs):
     return final_nc_data_prof
 
         
-def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = None):
+def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp=None,
+                              apply_psal_offset=False, psal_offset_value=0.0, sci_calib=None):
     """
     Main processing function: read intermediate netCDF + config and write final ARGO files.
 
@@ -1214,9 +1243,8 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
       3. Reads the config file to populate global attributes and calibration info.
       4. If org_netcdf_fp is provided, copies metadata from original real-time files
          (date_creation, existing HISTORY and SCIENTIFIC_CALIB entries).
-      5. Calls make_final_nc_files() to write the final netCDF.
-
-    NOTE: If PSAL correction is needed, see "apply salinity offset"
+      5. Optionally applies a PSAL offset and writes sci calib strings from sci_calib.
+      6. Calls make_final_nc_files() to write the final netCDF.
 
     Parameters
     ----------
@@ -1227,10 +1255,20 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
     dest_filepath : str
         Output directory for final delayed-mode netCDF files.
     config_fp : str
-        Path to the config text file generated by make_config_file().
+        Path to the ARGO metadata config text file generated by make_config_file().
     org_netcdf_fp : str, optional
         Directory of original real-time ARGO netCDF files. If provided, metadata
         is inherited from these files.
+    apply_psal_offset : bool
+        If True, adds psal_offset_value to PSAL_ADJUSTED before writing.
+    psal_offset_value : float
+        Offset to add to PSAL_ADJUSTED when apply_psal_offset is True.
+    sci_calib : dict or None
+        Optional calibration strings for SCIENTIFIC_CALIB_* fields. Keys:
+        psal_coefficient, psal_comment, psal_equation,
+        temp_coefficient, temp_comment, temp_equation,
+        cndc_coefficient, cndc_comment, cndc_equation.
+        None or missing keys = omit that variable's entry.
     """
     if org_netcdf_fp is not None:
         org_files = sorted(glob.glob(os.path.join(org_netcdf_fp, "*.nc")))
@@ -1385,7 +1423,7 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
             try:
                 org_profile_file = [f for f in org_files if f.endswith(f"R{float_num}_{profile_num:03}.nc")]
                 argo_org_file = nc4.Dataset(org_profile_file[0])
-            except IndexError as e:
+            except IndexError:
                 org_netcdf_fp = None
 
         # Get corresponding index of profile in argo_data dict
@@ -1450,28 +1488,36 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
         final_nc_data_prof["SCIENTIFIC_CALIB_DATE"] = None
         final_nc_data_prof["SCIENTIFIC_CALIB_EQUATION"] = None
 
+        # SET_COEFFICIENT — pres always set from surface offset; others from sci_calib
+        coeff_kwargs = {}
         if processed_argo_data["PRES_OFFSET"][i][0] is not None:
-            set_sci_calib_parems(final_nc_data_prof, "SET_COEFFICIENT", 
-                                    pres = f"surface_pressure={float(processed_argo_data["PRES_OFFSET"][i][0]):.2f} dbar",
-                                    # psal = f"dS = 0.025 (+/-0.001)"
-                                    )
-        else:
-            set_sci_calib_parems(final_nc_data_prof, "SET_COEFFICIENT")
-        
-        set_sci_calib_parems(final_nc_data_prof, "SET_COMMENT",
-                                pres = f"Pressure adjusted during delayed mode processing based on most recent valid surface pressure",
-                                psal = f"Due to the lack of large temperature gradients and increased noise in salinity, standard RBR thermal inertia correction not applied")
-        set_sci_calib_parems(final_nc_data_prof, "SET_EQUATION",
-                                pres = f"PRES_ADJUSTED = PRES - surface_pressure",
-                                # psal = f"PSAL_ADJUSTED = PSAL + dS"
-                                )
+            coeff_kwargs["pres"] = f"surface_pressure={float(processed_argo_data['PRES_OFFSET'][i][0]):.2f} dbar"
+        if sci_calib:
+            for var in ["psal", "temp", "cndc"]:
+                if sci_calib.get(f"{var}_coefficient"):
+                    coeff_kwargs[var] = sci_calib[f"{var}_coefficient"]
+        set_sci_calib_parems(final_nc_data_prof, "SET_COEFFICIENT", **coeff_kwargs)
+
+        # SET_COMMENT — pres always set; others from sci_calib
+        comment_kwargs = {"pres": "Pressure adjusted during delayed mode processing based on most recent valid surface pressure"}
+        if sci_calib:
+            for var in ["psal", "temp", "cndc"]:
+                if sci_calib.get(f"{var}_comment"):
+                    comment_kwargs[var] = sci_calib[f"{var}_comment"]
+        set_sci_calib_parems(final_nc_data_prof, "SET_COMMENT", **comment_kwargs)
+
+        # SET_EQUATION — pres always set; others from sci_calib
+        equation_kwargs = {"pres": "PRES_ADJUSTED = PRES - surface_pressure"}
+        if sci_calib:
+            for var in ["psal", "temp", "cndc"]:
+                if sci_calib.get(f"{var}_equation"):
+                    equation_kwargs[var] = sci_calib[f"{var}_equation"]
+        set_sci_calib_parems(final_nc_data_prof, "SET_EQUATION", **equation_kwargs)
+
+        now_str = datetime.now().strftime("%Y%m%d%H%M%S")
         set_sci_calib_parems(final_nc_data_prof, "SET_DATE",
-                                pres = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
-                                temp = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
-                                cndc = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
-                                psal = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
-                                temp_cndc = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}",
-                                nb_sample_ctd = f"{str(datetime.now().strftime("%Y%m%d%H%M%S"))}")
+                             pres=now_str, temp=now_str, cndc=now_str,
+                             psal=now_str, temp_cndc=now_str, nb_sample_ctd=now_str)
         
         # expand dim if it is incorrect
         if len(final_nc_data_prof["SCIENTIFIC_CALIB_COEFFICIENT"].shape) == 2:
@@ -1523,15 +1569,17 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
             final_nc_data_prof["HISTORY_DATE"] = final_nc_data_prof["HISTORY_DATE"][np.newaxis, :]
             final_nc_data_prof["HISTORY_INSTITUTION"] = final_nc_data_prof["HISTORY_INSTITUTION"][np.newaxis, :]
 
-        # Copy {PAREM}_ADJUSTED_QC arr vals into {PAREM}_QC
-        final_nc_data_prof["PRES_QC"] = final_nc_data_prof["PRES_ADJUSTED_QC"]
-        final_nc_data_prof["PSAL_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
-        final_nc_data_prof["TEMP_QC"] = final_nc_data_prof["TEMP_ADJUSTED_QC"]
+        # Copy {PAREM}_ADJUSTED_QC arr vals into {PAREM}_QC (.copy() to avoid aliasing —
+        # in-place NaN masking in format_argo_data would otherwise bleed between the two keys)
+        final_nc_data_prof["PRES_QC"] = final_nc_data_prof["PRES_ADJUSTED_QC"].copy()
+        final_nc_data_prof["PSAL_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"].copy()
+        final_nc_data_prof["TEMP_QC"] = final_nc_data_prof["TEMP_ADJUSTED_QC"].copy()
         # Set CNDC QC vals to PSAL QC vals
-        final_nc_data_prof["CNDC_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"]
+        final_nc_data_prof["CNDC_QC"] = final_nc_data_prof["PSAL_ADJUSTED_QC"].copy()
 
         ########################### apply salinity offset ###########################
-        #  final_nc_data_prof["PSAL_ADJUSTED"] = final_nc_data_prof["PSAL_ADJUSTED"] + 0.025
+        if apply_psal_offset:
+            final_nc_data_prof["PSAL_ADJUSTED"] = final_nc_data_prof["PSAL_ADJUSTED"] + psal_offset_value
         #############################################################################
 
         # Format data, this needs to be last step for workflow purposes
@@ -1539,31 +1587,46 @@ def process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, o
 
         make_final_nc_files(final_nc_data_prof, float_num, dest_filepath)
 
-def main():
-    # float_num = "1902655"
-    # nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10051\F10051_VI")
-    # dest_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10051\F10051_final")
-    orgargo_netcdf_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10051\Data_ARGO_NETCDF")
-    # config_fp = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F10051\1902655_config_file.txt")
-    
-    float_num = "4903903"
-    nc_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9185\F9443_VI_182")
-    dest_filepath = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9185\F9443_VI_182")
-    config_fp = Path(r"C:\Users\szswe\Desktop\DMODE_processing\all_data_files\F9185\4903903_config_file.txt")
-    orgargo_netcdf_filepath = None
-    
-    if not os.path.exists(dest_filepath):
-        os.mkdir(dest_filepath)
+def main(cfg_path=None):
+    with open(cfg_path or Path(__file__).parent / "make_final_nc_config.toml", "rb") as f:
+        cfg = tomllib.load(f)
 
-    """
-    Pass in an ARGO NETCDF filepath to make config file for parems needed
-    to make delayed mode NETCDF file.
-    """
-    #make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = orgargo_netcdf_filepath)
-    # make_config_file(float_num, dest_filepath)
-    # raise Exception
+    sec           = cfg["make_final_nc_files"]
+    float_num     = sec["float_num"]
+    nc_filepath   = Path(sec["nc_filepath"])
+    dest_filepath = Path(sec["dest_filepath"])
+    config_fp     = Path(sec["argo_config_fp"])
+    org_raw       = sec.get("orgargo_netcdf_filepath", "")
+    orgargo_netcdf_filepath = Path(org_raw) if org_raw else None
 
-    process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = orgargo_netcdf_filepath)
+    dest_filepath.mkdir(parents=True, exist_ok=True)
+
+    apply_psal_offset = sec["psal_offset"]["apply"]
+    psal_offset_value = sec["psal_offset"]["value"]
+
+    sci = sec["sci_calib"]
+    sci_calib = {
+        "psal_coefficient": sci.get("psal_coefficient") or None,
+        "psal_comment":     sci.get("psal_comment") or None,
+        "psal_equation":    sci.get("psal_equation") or None,
+        "temp_coefficient": sci.get("temp_coefficient") or None,
+        "temp_comment":     sci.get("temp_comment") or None,
+        "temp_equation":    sci.get("temp_equation") or None,
+        "cndc_coefficient": sci.get("cndc_coefficient") or None,
+        "cndc_comment":     sci.get("cndc_comment") or None,
+        "cndc_equation":    sci.get("cndc_equation") or None,
+    }
+
+    if sec["run_make_config_file"]:
+        config_file_dest = Path(sec["config_file_dest_filepath"])
+        make_config_file(float_num, config_file_dest, org_argo_netcdf_filepath=orgargo_netcdf_filepath)
+        return
+
+    process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp,
+                             org_netcdf_fp=orgargo_netcdf_filepath,
+                             apply_psal_offset=apply_psal_offset,
+                             psal_offset_value=psal_offset_value,
+                             sci_calib=sci_calib)
 
 if __name__ == '__main__':
     main()

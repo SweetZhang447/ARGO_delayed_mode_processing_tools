@@ -7,11 +7,89 @@ Step | Script | Role
 1 | `make_origin_nc_files.py` | Ingest raw CSV logs or real-time ARGO netCDF → intermediate netCDF
 2 | `delayed_mode_processing.py` | Automated QC checks + interactive flagging on intermediate files
 3 | `make_final_nc_files.py` | Convert intermediate + config file → final ARGO delayed-mode netCDF
+(opt) | `make_KML_files/make_kml.py` | Save profile snapshot images and generate a Google Earth KML file
 
 Supporting modules:
 - `tools.py` — shared utilities (Julian day conversion, intermediate netCDF I/O)
 - `graphs_nc.py` — all matplotlib graphs (called by delayed_mode_processing.py)
-- `drift_analysis.py` — salinity drift analysis vs reference datasets (seperate from workflow)
+- `drift_analysis.py` — salinity drift analysis vs reference datasets (separate from workflow)
+
+## Configuration Files
+
+Scripts 2 and 3 are each configured via a TOML file in the same directory. Run either script directly from the command line — no arguments needed:
+
+```
+python delayed_mode_processing.py   # reads delayed_mode_config.toml
+python make_final_nc_files.py       # reads make_final_nc_config.toml
+```
+
+**TOML syntax notes:**
+- Booleans: `true` / `false` (lowercase)
+- Lists: `[0, 1, 2]`
+- Empty/no value: `""` (empty string)
+- Windows paths: use single quotes, e.g. `'c:\Users\...\F9186_VI'`
+- Sub-sections use dot notation: `[delayed_mode_processing.generate_graphs]`
+
+### `delayed_mode_config.toml`
+
+Set exactly one of the three `run_*` flags to `true` at a time.
+
+```toml
+[delayed_mode_processing]
+float_num     = "2904018"
+nc_filepath   = 'c:\path\to\intermediate\netcdf\dir'
+dest_filepath = 'c:\path\to\output\dir'
+
+run_first_time       = false   # run once after make_origin_nc_files
+run_manipulate_flags = false   # interactive QC flagging for a single profile
+run_generate_graphs  = true    # overview graphs for full dataset
+
+[delayed_mode_processing.manipulate_flags]
+profile_num      = 81
+flag_points_pres = false
+flag_points_psal = false
+flag_points_temp = false
+flag_range_pres  = false
+flag_range_psal  = true
+flag_range_temp  = true
+flag_ts          = false
+
+[delayed_mode_processing.generate_graphs]
+qc_arr_selection  = [0, 1, 2]
+data_type         = "PSAL"        # "PSAL" or "TEMP"
+use_adjusted      = true
+prof_num_filter   = "347-378"     # "" for all profiles; format "START-END"
+date_filter_start = ""            # "" for none; format "YYYY_MM_DD_HH_MM_SS"
+date_filter_end   = ""
+```
+
+### `make_final_nc_config.toml`
+
+```toml
+[make_final_nc_files]
+float_num               = "1902655"
+nc_filepath             = 'c:\path\to\intermediate\netcdf\dir'
+dest_filepath           = 'c:\path\to\dmode\output\dir'
+argo_config_fp          = 'c:\path\to\float_config_file.txt'
+orgargo_netcdf_filepath = ""       # "" to skip; path to original real-time ARGO netCDF files
+run_make_config_file    = false    # set true once to generate config file template, then back to false
+
+[make_final_nc_files.psal_offset]
+apply = true
+value = 0.025                      # PSU offset added to PSAL_ADJUSTED
+
+[make_final_nc_files.sci_calib]
+# Strings written to SCIENTIFIC_CALIB_* in output netCDF. "" to omit.
+psal_coefficient = "PSAL_OFFSET=+0.025 PSU"
+psal_comment     = "..."
+psal_equation    = "PSAL_ADJUSTED = PSAL + 0.025"
+temp_coefficient = ""
+temp_comment     = ""
+temp_equation    = ""
+cndc_coefficient = ""
+cndc_comment     = ""
+cndc_equation    = ""
+```
 
 ## Intermediate netCDF Format
 
@@ -49,15 +127,13 @@ input_dir                  | Input directory
 dest_filepath              | Output directory 
 
 ## delayed_mode_processing.py
-This scripts reads the intermediate NETCDF files generated from the previous step, and provides a variety of tools and functions for the flagging and verification of data.
+This script reads the intermediate netCDF files generated from the previous step and provides tools for QC flagging and verification. Configure it via `delayed_mode_config.toml` (see **Configuration Files** above), then run:
 
-FLAG          | DESCRIPTION
-------------- | -------------
-float_num                  | Float ID; EX: F9186
-nc_filepath                | Path to generated intermediate NETCDF files
-dest_filepath              | Output directory 
+```
+python delayed_mode_processing.py
+```
 
-Some functions may require more input parameters, more details outlined below.
+Some functions require additional parameters; details below.
 
 ### FUNCTION: first_time_run(nc_filepath, dest_filepath, float_num)
 This function is designed to be the first step run after the generation of the intermediate NETCDF files.
@@ -134,6 +210,37 @@ prof_num_filter            | Format: "PROFNUM_PROFNUM"; EX: "5-7" will get you p
 
 After exiting out of the aforementioned graphs, selected profiles of interest will pop out a data_snapshot_graph, and flag_range_data_graph for TEMP and PSAL where you can manipulate QC flags
 
+## make_KML_files/make_kml.py
+Saves a data snapshot image for every profile in the intermediate netCDF directory, then generates a Google Earth KML file with one placemark per profile containing that snapshot as a popup image.
+
+**Output structure:**
+```
+<save_dir>/
+├── images/
+│   ├── profile_1_data_snapshot.png
+│   ├── profile_2_data_snapshot.png
+│   └── ...
+└── <float_name>.kml
+```
+
+The KML references images via relative paths (`images/profile_N_data_snapshot.png`), so the KML file and the `images/` folder must stay siblings in the same directory.
+
+**Usage:**
+```
+python make_KML_files/make_kml.py -read_dir <path> -save_dir <path> -float_name <name>
+```
+
+FLAG          | DESCRIPTION
+------------- | -------------
+`-read_dir`   | Directory of intermediate netCDF files to read from
+`-save_dir`   | Output directory; images saved to `save_dir/images/`, KML saved to `save_dir/<float_name>.kml`
+`-float_name` | Float name used for the KML filename and trajectory label (e.g. `F9186`)
+
+**Example:**
+```
+python make_KML_files/make_kml.py -read_dir "c:\FLOAT_DATA\F9186\DMODE\F9186_VI" -save_dir "c:\FLOAT_DATA\F9186\DMODE\F9186_KML" -float_name F9186
+```
+
 ## graphs_nc.py
 This module provides all interactive matplotlib-based graphs used during delayed-mode QC. It is called internally by `delayed_mode_processing.py`.
 Functions are grouped into three categories:
@@ -176,23 +283,17 @@ Red     | 4        | Bad
 Fuchsia edge | —   | Density inversion detected at this level
 
 ## make_final_nc_files.py
-This module makes the final delayed mode ARGO NETCDF files. 
+This module produces the final delayed-mode ARGO netCDF files from the intermediate files. Configure it via `make_final_nc_config.toml` (see **Configuration Files** above), then run:
 
-FLAG          | DESCRIPTION
-------------- | -------------
-float_num                 | Float number
-dest_filepath             | Output directory 
-nc_filepath               | Input directory of intermediate NETCDF files
-orgargo_netcdf_filepath (OPT)  | Directory for original argo NETCDF files, if it exists
-config_fp                 | Filepath to config file
+```
+python make_final_nc_files.py
+```
 
-## make_config_file(float_num, dest_filepath, org_argo_netcdf_filepath = orgargo_netcdf_filepath)
-Pass in orgargo_netcdf_filepath to make config file for params needed to generate delayed mode NETCDF files. 
-Otherwise leave empty and this function will generate a empty text file for user to manually fill out. 
+### First-time setup
+Set `run_make_config_file = true` once to generate a per-float config file template (or auto-populate it from original real-time ARGO netCDF files if `orgargo_netcdf_filepath` is set). Set it back to `false` for all subsequent runs.
 
-## process_data_dmode_files(nc_filepath, float_num, dest_filepath, config_fp, org_netcdf_fp = orgargo_netcdf_filepath)
-Pass in orgargo_netcdf_filepath, if it exists, in order to generate delayed mode files from the original real time ARGO files.
-For example, if passed in, parameters like "date_creation" will be taken from the original real-time files, new scientific_calib and history comments will be appended to existing ones.
+### `orgargo_netcdf_filepath`
+If the original real-time ARGO netCDF files are available, set this path so that metadata like `date_creation` is preserved and `SCIENTIFIC_CALIB` / history entries are appended rather than overwritten. Set to `""` to skip.
 
 ## tools.py
 Shared utilities used across all pipeline scripts. Import with `from tools import ...`.
@@ -236,6 +337,8 @@ FUNCTION                               | DESCRIPTION
 `F9443_avg_PSAL()`                     | F9443: avg PSAL at 500–600 dbar vs ORP WOOD CTD and AXCTDs
 `F9443_PSAL_AT_TEMP(TT, save_dir)`     | F9443: PSAL at isotherm TT vs reference datasets
 `F9443_TS()`                           | F9443: TS diagram vs float F11678 and ORP WOOD CTD
+`generate_F0051_F9186_TS()`            | F10051 & F9186: TS diagram for profiles ≥ 500 dbar, Feb 1 – Jul 31 2025
+`generate_F0051_F9186_PSAL_at_TEMP()`  | F10051 & F9186: per-profile least-squares PSAL at 2°C (≥ 500 dbar, TEMP < 2.1°C), plotted vs time
 
 ### Helper Utilities
 
