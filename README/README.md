@@ -9,10 +9,12 @@ Step | Script | Role
 3 | `make_final_nc_files.py` | Convert intermediate + config file → final ARGO delayed-mode netCDF
 (opt) | `make_KML_files/make_kml.py` | Save profile snapshot images and generate a Google Earth KML file
 
-Supporting modules:
+Supporting modules/ scripts:
 - `tools.py` — shared utilities (Julian day conversion, intermediate netCDF I/O)
 - `graphs_nc.py` — all matplotlib graphs (called by delayed_mode_processing.py)
 - `drift_analysis.py` — salinity drift analysis vs reference datasets (separate from workflow)
+
+Please email me at xuanqin.zhang@sjsu.edu if you have any questions or comments!
 
 ## Configuration Files
 
@@ -109,8 +111,6 @@ This repository provides a set of Python-based tools for the delayed mode proces
 Below includes instructions for various scripts needed to run the pipeline, in order. Please specify/ change needed params 
 in the "main" function of each file. 
 
-Please email me at xuanqin.zhang@sjsu.edu if you have any questions or comments!
-
 ## make_origin_nc_files.py
 This script converts either raw float .csv files or real time ARGO NetCDF files into a intermediate NetCDF format for delayed mode processing.
 Inside of the main module, there are 7 input parameters to specify.
@@ -152,7 +152,9 @@ Steps and checks are outlined below:
    - If any density inversions are found on the profile, it will pop up a datasnapshot graph.
      - Please look in "README" folder for more details regarding this test
 4. count_check()
-   - For bin averaged data, if (NB_SAMPLE_CTD > 50) OR (NB_SAMPLE_CTD < 1 AND NB_SAMPLE_CTD != -99), then set PSAL, CNDC, and TEMP ADJUSTED_QC arrays to 3 to indicate "probably bad" value.
+   - For profiles with suspicious counts (NB_SAMPLE_CTD > 100, or < 1, but NOT -99):
+    1) If there is a spike in the PSAL values of more than 15 PSU, mark as bad
+    2) For the last point in each profile, checks if PSAL difference is larger than 0.02 PSU, if so -> mark as bad
    - NOTE: -99 is used to indicate misssing/ nonexistent NB_SAMPLE_CTD values.
 5.  pres_depth_check()
    - Checks where pressure < 1 dbar, and marks PSAL and CNDC ADJUSTED_QC as 4 to indicate bad value.
@@ -196,7 +198,7 @@ date_filter_start          | Format: "YYYY_MM_DD_HH_MM_SS" or None, ability to f
 date_filter_end            | Format: "YYYY_MM_DD_HH_MM_SS" or None
 prof_num_filter            | Format: "PROFNUM_PROFNUM"; EX: "5-7" will get you profiles 5-7. Specify either prof num filter or date filter! 
 
-1. graph_pres_v_var_all()
+1. graph_pres_v_var_all
    - Generates a PRES v DATA_TYPE graph for all profiles
    - Ability to click and select profiles of interest
    - Ability to filter by date range and prof num
@@ -307,8 +309,7 @@ FUNCTION                      | DESCRIPTION
 `read_intermediate_nc_file(filepath)` | Read all intermediate .nc files in a directory into a single argo_data dict; NaN-pads profiles to equal length
 
 ## drift_analysis.py
-Salinity drift analysis comparing Argo float salinity against independent reference datasets. This module is designed to be more interactive, workflow optimization is still
-underway. 
+Salinity drift analysis comparing Argo float salinity against independent reference datasets. This module is designed to be more interactive, workflow optimization is still underway. 
 
 ### Reference Data Readers
 
