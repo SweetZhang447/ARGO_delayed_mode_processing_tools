@@ -1,5 +1,6 @@
 # ARGO Delayed Mode Processing Tools
 
+
 ## Pipeline Overview
 
 Step | Script | Role
@@ -16,6 +17,12 @@ Supporting modules/ scripts:
 
 Please email me at xuanqin.zhang@sjsu.edu if you have any questions or comments!
 
+## Installation
+
+**Python 3.10+** required.
+```bash
+pip install numpy pandas scipy matplotlib mplcursors netCDF4 gsw requests beautifulsoup4 simplekml
+```
 ## Configuration Files
 
 Scripts 2 and 3 are each configured via a TOML file in the same directory. Run either script directly from the command line — no arguments needed:

@@ -4,5 +4,5 @@ __pycache__/*
 # Ignore claude settings
 .claude/*
 
-# Ignore unused RBR files
-RBRargo3_celltm_corr/*
+.vscode/*
+lib/*
