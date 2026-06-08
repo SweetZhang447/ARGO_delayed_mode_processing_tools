@@ -14,6 +14,7 @@ Three main entry-point functions (called from main):
 QC flag values: 0=no QC, 1=good, 2=prob good, 3=prob bad, 4=bad, 5=changed, 8=interpolated
 Julian days referenced to 1950-01-01 00:00:00 UTC.
 """
+import argparse
 import tomllib
 import os
 from matplotlib import pyplot as plt
@@ -1067,13 +1068,19 @@ def generate_dataset_graphs(nc_filepath, dest_filepath, float_num, qc_arr_select
 
 
 def main(cfg_path=None):
+    parser = argparse.ArgumentParser(description="Delayed-mode QC processing for ARGO float data.")
+    parser.add_argument("--float_num",     default=None, help="Float identifier (overrides TOML)")
+    parser.add_argument("--nc_filepath",   default=None, help="Path to intermediate netCDF directory (overrides TOML)")
+    parser.add_argument("--dest_filepath", default=None, help="Output directory (overrides TOML)")
+    args = parser.parse_args()
+
     with open(cfg_path or Path(__file__).parent / "delayed_mode_config.toml", "rb") as f:
         cfg = tomllib.load(f)
 
     sec           = cfg["delayed_mode_processing"]
-    float_num     = sec["float_num"]
-    nc_filepath   = Path(sec["nc_filepath"])
-    dest_filepath = Path(sec["dest_filepath"])
+    float_num     = args.float_num     or sec["float_num"]
+    nc_filepath   = Path(args.nc_filepath   or sec["nc_filepath"])
+    dest_filepath = Path(args.dest_filepath or sec["dest_filepath"])
     dest_filepath.mkdir(parents=True, exist_ok=True)
 
     if sec["run_first_time"]:

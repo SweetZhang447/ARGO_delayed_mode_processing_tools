@@ -31,7 +31,7 @@ flag_ts = false
 qc_arr_selection = [0, 1, 2]
 data_type    = "PSAL"
 use_adjusted = true
-prof_num_filter   = "347-378"  # set to "" for all profiles
+prof_num_filter   = "START-END"  # set to "" for all profiles
 # Date filters: format "YYYY_MM_DD_HH_MM_SS", or "" for none
 # start only: filters from start date to end of data; both: filters start - end
 date_filter_start = ""

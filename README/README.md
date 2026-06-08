@@ -21,7 +21,7 @@ Please email me at xuanqin.zhang@sjsu.edu if you have any questions or comments!
 
 **Python 3.10+** required.
 ```bash
-pip install numpy pandas scipy matplotlib mplcursors netCDF4 gsw requests beautifulsoup4 simplekml
+pip install numpy pandas scipy matplotlib mplcursors netCDF4 gsw requests beautifulsoup4 simplekml pyqt5 argparse
 ```
 ## Configuration Files
 
@@ -45,6 +45,7 @@ Set exactly one of the three `run_*` flags to `true` at a time.
 
 ```toml
 [delayed_mode_processing]
+# These values can also be passed directly from CLI to override these 3 values
 float_num     = "2904018"
 nc_filepath   = 'c:\path\to\intermediate\netcdf\dir'
 dest_filepath = 'c:\path\to\output\dir'
@@ -67,7 +68,7 @@ flag_ts          = false
 qc_arr_selection  = [0, 1, 2]
 data_type         = "PSAL"        # "PSAL" or "TEMP"
 use_adjusted      = true
-prof_num_filter   = "347-378"     # "" for all profiles; format "START-END"
+prof_num_filter   = "347-378"     # Pass in blank str "" for all profiles; 
 date_filter_start = ""            # "" for none; format "YYYY_MM_DD_HH_MM_SS"
 date_filter_end   = ""
 ```
@@ -138,6 +139,12 @@ This script reads the intermediate netCDF files generated from the previous step
 
 ```
 python delayed_mode_processing.py
+```
+
+`float_num`, `nc_filepath`, and `dest_filepath` can also be passed directly on the command line and will override the TOML values:
+
+```
+python delayed_mode_processing.py --float_num 2904018 --nc_filepath "c:\path\to\F9186_VI" --dest_filepath "c:\path\to\F9186_DMODE"
 ```
 
 Some functions require additional parameters; details below.
