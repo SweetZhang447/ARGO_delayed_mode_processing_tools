@@ -1,6 +1,5 @@
 # ARGO Delayed Mode Processing Tools
 
-
 ## Pipeline Overview
 
 Step | Script | Role
@@ -365,5 +364,4 @@ FUNCTION                                                | DESCRIPTION
 `filter_float_overlap_date_range(f1, f1_name, f2, f2_name, just_overlap)` | Filter two float dicts to overlapping or partially overlapping date range
 `find_psal_at_temp(target_temp, data, show_graph)`      | Interpolate PSAL at a target isotherm temperature for each profile
 `make_TS_plot(list_of_data, list_of_labels)`            | TS diagram with sigma-t density contours for multiple datasets
-
 

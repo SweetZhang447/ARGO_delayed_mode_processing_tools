@@ -5,9 +5,9 @@
 # ============================================================
 [delayed_mode_processing]
 # ============================================================
-float_num = "2904018"
-nc_filepath   = 'c:\Users\szswe\Desktop\FLOAT_DATA\F9186\DMODE\F9186_VI'
-dest_filepath = 'c:\Users\szswe\Desktop\FLOAT_DATA\F9186\DMODE\F9186_VI'
+float_num = "FLOAT_NUM" # Use WMO or naming convention associated with make_origin_nc_files.py
+nc_filepath   = 'PATH'
+dest_filepath = 'PATH'
 
 # Top-level feature flags: set exactly one to true at a time
 run_first_time               = false
