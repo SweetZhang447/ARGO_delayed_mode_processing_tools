@@ -18,9 +18,9 @@ Please email me at xuanqin.zhang@sjsu.edu if you have any questions or comments!
 
 ## Installation
 
-**Python 3.10+** required.
+**Python 3.12+** required. Dependencies are pinned in `requirements.txt`:
 ```bash
-pip install numpy pandas scipy matplotlib mplcursors netCDF4 gsw requests beautifulsoup4 simplekml pyqt5 argparse
+pip install -r requirements.txt
 ```
 ## Configuration Files
 
